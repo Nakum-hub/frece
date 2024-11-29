@@ -6,31 +6,31 @@ INSTALL_DIR="/usr/local/bin"
 TOOL_NAME="frece"
 SCRIPT_NAME="frece.py"
 
-# Check if the script already exists in the installation directory
+# Check if the tool already exists in the installation directory
 if [ -f "$INSTALL_DIR/$TOOL_NAME" ]; then
     echo "Tool already installed at $INSTALL_DIR/$TOOL_NAME"
     exit 1
 fi
 
-# Clone the repository
-echo "Cloning the repository..."
-git clone "$REPO_URL" /tmp/frece
+# Clone the repository directly into the installation directory
+echo "Cloning the repository directly into $INSTALL_DIR..."
+git clone "$REPO_URL" "$INSTALL_DIR/$TOOL_NAME-repo"
 
-# Check if the cloning was successful
-if [ ! -d "/tmp/frece" ]; then
+# Check if cloning was successful
+if [ ! -d "$INSTALL_DIR/$TOOL_NAME-repo" ]; then
     echo "Failed to clone repository. Exiting installation."
     exit 1
 fi
 
-# Create the symlink in the appropriate directory
-echo "Creating symlink in $INSTALL_DIR..."
-ln -sf /tmp/frece/$SCRIPT_NAME "$INSTALL_DIR/$TOOL_NAME"
+# Move the main script to the installation directory
+echo "Setting up the tool..."
+mv "$INSTALL_DIR/$TOOL_NAME-repo/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
 
 # Make the script executable
 chmod +x "$INSTALL_DIR/$TOOL_NAME"
 
-# Clean up
-rm -rf /tmp/frece
+# Remove the cloned repository directory (clean-up)
+rm -rf "$INSTALL_DIR/$TOOL_NAME-repo"
 
-# Display the installation success message
+# Display the success message
 echo "Installation successful! You can now run '$TOOL_NAME' from anywhere."
