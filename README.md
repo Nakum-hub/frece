@@ -1,6 +1,4 @@
----
-
-# FRECE (File Recovery Console) - README
+FRECE (File Recovery Console) - README
 
 ## Introduction
 **FRECE (File Recovery Console)** is a powerful Python-based tool designed for data recovery, specifically aimed at restoring deleted log files and other crucial data on Linux-based systems. This tool can assist cyber forensics professionals in performing detailed investigations on lost or deleted files.
