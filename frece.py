@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import os
 import sys
 import random
@@ -86,21 +87,11 @@ class FRECE:
         A tool to recover and analyze deleted files from various file systems.
 
         {Fore.GREEN}Usage:{Style.RESET_ALL}
-            FRECE> recover <target_dir> <recovery_dir>  - Recover files from the specified directory.
-            FRECE> recover_recycle <recovery_dir>       - Recover files from the recycle bin.
-            FRECE> search_deleted <target_dir>          - Search for deleted files.
-            FRECE> hashcheck <recovery_dir>             - Verify the integrity of recovered files.
-            FRECE> listpart <disk>                      - List all partitions on the specified disk.
-            FRECE> image <disk> <image_path>            - Create a forensic-quality image of the disk.
-            FRECE> carve <disk_image> <recovery_dir>    - Carve out files from a disk image.
-            FRECE> report <recovery_dir>                - Generate a detailed recovery report.
-            FRECE> view <file_path>                    - View the contents of a file.
-
-        {Fore.YELLOW}Options:{Style.RESET_ALL}
-            --version   Show the version of the tool.
-            --help      Show help for a command.
-            man <command>  Show detailed manual for a specific command (e.g., man recover).
-            scan <dir> [<ext>]   Scan a directory for files, optionally filter by file extension.
+            frece recover <target_dir> <recovery_dir>  - Recover files from the specified directory.
+            frece scan <dir> [<ext>]   - Scan a directory for files, optionally filter by file extension.
+            frece man <command>        - Show detailed manual for a specific command.
+            frece --version            - Show the version of the tool.
+            frece --help               - Show help for all commands.
         """
         print(help_text)
 
@@ -117,16 +108,10 @@ class FRECE:
             - Scan a directory for files, optionally filtering by file extension.
             - If no file extension is provided, all files are returned.
             """,
-            'recover_recycle': """
-            recover_recycle <recovery_dir>
-            - Recover files from the recycle bin to the specified recovery directory.
+            'man': """
+            man <command>
+            - Show detailed manual for a specific command.
             """,
-            'search_deleted': """
-            search_deleted <target_dir>
-            - Search for deleted files within a specified directory.
-            - Currently, this feature is not implemented.
-            """,
-            # You can add other commands here similarly.
         }
         manual = manuals.get(command, "Manual not found for this command.")
         print(f"{Fore.CYAN}Manual for '{command}':{Style.RESET_ALL}\n{manual}")
@@ -141,8 +126,9 @@ class FRECE:
             try:
                 command = input(f"{Fore.CYAN}FRECE> {Style.RESET_ALL}").strip()
                 if command.startswith("recover"):
-                    target_dir = command.split()[1]
-                    recovery_dir = command.split()[2] if len(command.split()) > 2 else None
+                    parts = command.split()
+                    target_dir = parts[1]
+                    recovery_dir = parts[2] if len(parts) > 2 else None
                     files = self.scan_directory(target_dir)
                     self.recover_files(files, recovery_dir)
                 elif command.startswith("scan"):
@@ -196,11 +182,16 @@ class FRECE:
                 files = self.scan_directory(target_dir, file_extension)
                 for file in files:
                     print(file)
+            elif command == "man":
+                if len(sys.argv) > 2:
+                    self.show_command_man(sys.argv[2])
+                else:
+                    print(f"{Fore.RED}Error: Missing command name for 'man'.{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}Unknown command.{Style.RESET_ALL}")
+                print(f"{Fore.RED}Invalid command.{Style.RESET_ALL}")
         else:
             self.interactive_mode()
 
 if __name__ == "__main__":
-    frece = FRECE()
-    frece.start()
+    tool = FRECE()
+    tool.start()

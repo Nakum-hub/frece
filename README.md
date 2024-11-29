@@ -1,31 +1,34 @@
-# FRECE - File Recovery Console
+# FRECE - File Recovery Console (FRECE)
 
-## Overview
-
-**FRECE** (File Recovery Console) is a Python-based tool designed for recovering lost or deleted files from various file systems. It is ideal for cyber forensics, data recovery, and integrity verification of retrieved files.
-
-This tool provides a robust command-line interface for recovering files and verifying their integrity using hash checks, making it an essential utility for forensic investigators and tech professionals.
+FRECE (File Recovery Console) is a tool designed to recover and analyze deleted files from various file systems. This tool provides functionalities for scanning directories, recovering files, and creating detailed recovery reports.
 
 ---
 
 ## Features
 
-- **File Recovery**: Retrieve deleted or lost files from storage devices.
-- **Integrity Verification**: Perform hash checks to ensure the reliability of recovered files.
-- **Cross-Platform Compatibility**: Works on Unix-like and Windows systems.
-- **Simple CLI Usage**: Easy-to-use command-line interface for quick operations.
-- **Forensic-Grade Recovery**: Designed for secure and efficient recovery of data.
+- **Recover Files**: Recover files from specified directories or from the recycle bin.
+- **Scan Directories**: Scan a directory for files, optionally filter by file extension.
+- **Search Deleted Files**: Search for deleted files within a directory (feature in development).
+- **Generate Recovery Reports**: Generate detailed recovery reports for analysis.
+- **View Files**: View the contents of recovered files.
+- **Disk Imaging and Carving**: Create forensic-quality images of disks and carve files from disk images.
 
 ---
 
 ## Installation
 
 ### Prerequisites
-- Python 3.8 or later
-- `pip` (Python package installer)
 
-### Steps
+- **Python 3.6+**
+- **Git** (for cloning the repository)
+- **Linux** (Tested on Kali Linux, but should work on other distributions)
+
+### Installing FRECE
+
+To install FRECE globally on your system, follow these steps:
+
 1. Clone the repository:
+   
    ```bash
    git clone https://github.com/Nakum-hub/frece.git
-# frece
+   cd frece

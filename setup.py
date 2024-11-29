@@ -8,10 +8,11 @@ setup(
     packages=find_packages(),  # Automatically finds packages in your directory
     py_modules=["frece"],  # Specifies standalone Python modules
     entry_points={
-        "console_scripts": [
-            "frece=frece:main",  # Maps the command 'frece' to frece.main()
-        ],
-    },
+    "console_scripts": [
+        "frece=frece:FRECE",  # Maps 'frece' to the FRECE class
+    ],
+},
+
     install_requires=[],  # Add dependencies if needed (e.g., ['requests'])
     classifiers=[
         "Programming Language :: Python :: 3",
