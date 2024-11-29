@@ -1,0 +1,2 @@
+[console_scripts]
+frece = frece:main

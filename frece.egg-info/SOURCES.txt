@@ -1,0 +1,8 @@
+README.md
+frece.py
+setup.py
+frece.egg-info/PKG-INFO
+frece.egg-info/SOURCES.txt
+frece.egg-info/dependency_links.txt
+frece.egg-info/entry_points.txt
+frece.egg-info/top_level.txt
