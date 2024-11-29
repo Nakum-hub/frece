@@ -6,47 +6,7 @@ import random
 from colorama import Fore, Style, init
 import shutil
 from pathlib import Path
-
-# Conditional import for Windows systems
-if sys.platform == "win32":
-    try:
-        import pyreadline as readline  # For command history on Windows
-    except ImportError:
-        print("pyreadline not found, running without command history.")
-else:
-    import readline  # For command history on Unix-based systems
-
-# Initialize colorama
-init(autoreset=True)
-
-# Display Dynamic Banner
-def display_dynamic_banner():
-    banners = [
-        f"""{Fore.RED}
-███████╗██████╗ ███████╗███████╗██████╗ ███████╗ ██████╗ 
-██╔════╝██╔══██╗██╔════╝██╔════╝██╔══██╗██╔════╝██╔═══██╗
-█████╗  ██║  ██║█████╗  █████╗  ██████╔╝█████╗  ██║   ██║
-██╔══╝  ██║  ██║██╔══╝  ██╔══╝  ██╔═══╝ ██╔══╝  ██║   ██║
-███████╗██████╔╝███████╗███████╗██║     ███████╗╚██████╔╝
-╚══════╝╚═════╝ ╚══════╝╚══════╝╚═╝     ╚══════╝ ╚═════╝
-{Fore.CYAN}File Recovery Tool
-{Style.RESET_ALL}""",
-        f"""{Fore.GREEN}
-▀▀█▀▀ █▀▀ █▀▀▄ █▀▀█ █▀▀ █▀▀█ █▀▀▄ █▀▀▀ █▀▀ 
-░▒█░░ █▀▀ █▀▀▄ █▄▄█ ▀▀█ █▄▄▀ █░░█ █░▀█ ▀▀█ 
-░▒█░░ ▀▀▀ ▀▀▀░ ▀░░▀ ▀▀▀ ▀░▀▀ ▀▀▀░ ▀▀▀▀ ▀▀▀
-{Fore.CYAN}File Recovery Console.
-{Style.RESET_ALL}"""
-    ]
-    print(random.choice(banners))
-#!/usr/bin/env python3
-
-import os
-import sys
-import random
-from colorama import Fore, Style, init
-import shutil
-from pathlib import Path
+import subprocess
 
 # Conditional import for Windows systems
 if sys.platform == "win32":
@@ -226,3 +186,148 @@ Description: This command scans the specified directory and returns a list of fi
 if __name__ == "__main__":
     tool = FRECE()
     tool.start()
+
+
+# ======= 1st Code =======
+
+
+# Set recovery directory to Desktop's Recovered_files
+RECOVERY_DIR = os.path.join(Path.home(), "Desktop", "Recovered_files")
+
+# Install dependencies automatically
+def install_dependencies():
+    """
+    Automatically installs required tools like TestDisk and PhotoRec.
+    """
+    tools = ["testdisk", "photorec"]
+    missing_tools = [tool for tool in tools if not shutil.which(tool)]
+    
+    if missing_tools:
+        print("Installing missing dependencies:", ", ".join(missing_tools))
+        try:
+            subprocess.run(["sudo", "apt", "update"], check=True)
+            subprocess.run(["sudo", "apt", "install", "-y"] + missing_tools, check=True)
+            print("Dependencies installed successfully.")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to install dependencies: {e}")
+            sys.exit(1)
+    else:
+        print("All required dependencies are already installed.")
+
+# Directory Scanning
+def scan_all_files(directory):
+    """
+    Recursively scans directories for all types of files.
+    """
+    try:
+        print(f"Scanning directory: {directory}")
+        files = [file for file in Path(directory).rglob('*') if file.is_file()]
+        print(f"Found {len(files)} files.")
+        return files
+    except Exception as e:
+        print(f"Error scanning directory: {e}")
+        return []
+
+# File Recovery
+def recover_all_files(files):
+    """
+    Copies detected files to the RECOVERY_DIR.
+    """
+    if not os.path.exists(RECOVERY_DIR):
+        os.makedirs(RECOVERY_DIR)
+        print(f"Created recovery directory: {RECOVERY_DIR}")
+    
+    for file in files:
+        try:
+            recovery_path = os.path.join(RECOVERY_DIR, os.path.basename(file))
+            shutil.copy(file, recovery_path)
+            print(f"Recovered: {file} -> {recovery_path}")
+        except Exception as e:
+            print(f"Error recovering {file}: {e}")
+    print(f"Recovered files are stored in: {RECOVERY_DIR}")
+
+# TestDisk Automation
+def run_testdisk_automated():
+    """
+    Automates TestDisk recovery process.
+    """
+    print("Running TestDisk for partition and file recovery...")
+    try:
+        subprocess.run(["testdisk"], check=True)
+        print(f"TestDisk completed. Recovered files are saved in: {RECOVERY_DIR}")
+    except subprocess.CalledProcessError as e:
+        print("Error occurred while running TestDisk:", e)
+
+# PhotoRec Automation
+def run_photorec_automated():
+    """
+    Automates PhotoRec recovery process and directs output to RECOVERY_DIR.
+    """
+    print("Running PhotoRec for file recovery...")
+    try:
+        subprocess.run(["photorec", "/d", RECOVERY_DIR], check=True)
+        print(f"PhotoRec completed. Recovered files are saved in: {RECOVERY_DIR}")
+    except subprocess.CalledProcessError as e:
+        print("Error occurred while running PhotoRec:", e)
+
+# Unified Recovery Menu
+def recovery_with_tools():
+    """
+    Unified function to handle recovery with TestDisk and PhotoRec.
+    """
+    print("Choose a recovery method:")
+    print("1. TestDisk - Partition and file system recovery")
+    print("2. PhotoRec - File recovery")
+    print("3. Back to Main Menu")
+    choice = input("Enter your choice: ")
+    if choice == "1":
+        run_testdisk_automated()
+    elif choice == "2":
+        run_photorec_automated()
+    elif choice == "3":
+        return
+    else:
+        print("Invalid choice. Please try again.")
+
+# Main CLI
+def main():
+    """
+    Main function to handle command-line arguments for directory scanning,
+    file recovery, and advanced recovery tools.
+    """
+    # Ensure dependencies are installed
+    install_dependencies()
+
+    print("Welcome to FRECE Recovery Tool!")
+    print("Options:")
+    print("1. Scan and recover files from a directory")
+    print("2. Advanced recovery using TestDisk or PhotoRec")
+    print("3. Exit")
+    choice = input("Enter your choice: ")
+    
+    if choice == "1":
+        directory = input("Enter the directory to scan: ")
+        if not os.path.exists(directory):
+            print(f"Directory {directory} does not exist.")
+            sys.exit(1)
+        
+        print(f"Starting scan and recovery...")
+        files = scan_all_files(directory)
+        if not files:
+            print("No files found to recover.")
+            return
+        
+        recover_all_files(files)
+    
+    elif choice == "2":
+        recovery_with_tools()
+    
+    elif choice == "3":
+        print("Exiting the tool.")
+        sys.exit(0)
+    
+    else:
+        print("Invalid option. Please try again.")
+
+if __name__ == "__main__":
+    main()
