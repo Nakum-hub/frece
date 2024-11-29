@@ -1,156 +1,153 @@
-# FRECE - File Recovery Console (FRECE)
-
-FRECE (File Recovery Console) is a tool designed to recover and analyze deleted files from various file systems. This tool provides functionalities for scanning directories, recovering files, and creating detailed recovery reports.
-
 ---
+
+# FRECE (File Recovery Console) - README
+
+## Introduction
+**FRECE (File Recovery Console)** is a powerful Python-based tool designed for data recovery, specifically aimed at restoring deleted log files and other crucial data on Linux-based systems. This tool can assist cyber forensics professionals in performing detailed investigations on lost or deleted files.
 
 ## Features
+- Recover deleted log files
+- User-friendly interface for data recovery
+- Python-based with easy installation and setup
 
-- **Recover Files**: Recover files from specified directories or from the recycle bin.
-- **Scan Directories**: Scan a directory for files, optionally filter by file extension.
-- **Search Deleted Files**: Search for deleted files within a directory (feature in development).
-- **Generate Recovery Reports**: Generate detailed recovery reports for analysis.
-- **View Files**: View the contents of recovered files.
-- **Disk Imaging and Carving**: Create forensic-quality images of disks and carve files from disk images.
+## Prerequisites
+Before installing FRECE, ensure your system meets the following requirements:
+- Linux-based operating system (Kali Linux preferred)
+- Python 3.6 or higher
+- Python package manager `pip`
+- Required Python dependencies (listed in `requirements.txt`)
 
----
+## Installation Steps
 
+### 1. Clone the Repository
+If you haven't already downloaded the project, you can clone it using Git:
 
-
-### Prerequisites
-
-- **Python 3.6+**
-- **Git** (for cloning the repository)
-- **Linux** (Tested on Kali Linux, but should work on other distributions)
-
-### Installing FRECE
-
-To install FRECE globally on your system, follow these steps:
-
-1. Clone the repository:
-   
-   ```bash
-   git clone https://github.com/Nakum-hub/frece.git
-   cd frece
-
-
-
-### Overview
-The `install.sh` script automates the installation of the **FRECE** tool, a Python-based forensic recovery tool, by cloning the tool's repository directly into the `/usr/local/bin` directory. Once installed, the tool can be accessed globally from anywhere on the system using the command `frece`.
-
----
-
-### Features of the Installation Script
-1. **Direct Installation to `/usr/local/bin`:**
-   - The script ensures the tool is installed directly in the `/usr/local/bin` directory for universal accessibility.
-   
-2. **Repository Management:**
-   - Clones the FRECE GitHub repository.
-   - Extracts only the necessary `frece.py` script for execution.
-
-3. **Clean Installation:**
-   - Ensures no temporary directories like `/tmp` are used.
-   - Removes unnecessary files after setup.
-
-4. **Error Handling:**
-   - Prevents overwriting if the tool is already installed.
-   - Exits gracefully if cloning fails.
-
----
-
-### Requirements
-1. **Root Privileges:**
-   - The script requires `sudo` or `root` access to write to the `/usr/local/bin` directory.
-
-2. **Git Installed:**
-   - Ensure `git` is installed on your system:
-     ```bash
-     sudo apt update && sudo apt install git
-     ```
-
-3. **Python Installed:**
-   - FRECE requires Python to execute. Install Python if not already available:
-     ```bash
-     sudo apt install python3
-     ```
-
----
-
-### Installation Steps
-1. **Download the Script:**
-   Save the `install.sh` script to your system.
-
-2. **Make the Script Executable:**
-   Run the following command to give the script execution permissions:
-   ```bash
-   chmod +x install.sh
-   ```
-
-3. **Run the Script:**
-   Execute the script with root privileges to begin the installation:
-   ```bash
-   sudo ./install.sh
-   ```
-
-4. **Verify Installation:**
-   After successful installation, you can run the tool from anywhere using:
-   ```bash
-   frece
-   ```
-
----
-
-### Script Workflow
-1. **Clone Repository:**
-   - Downloads the FRECE repository from GitHub directly to `/usr/local/bin/frece-repo`.
-
-2. **Install the Script:**
-   - Moves the main Python script (`frece.py`) to `/usr/local/bin/frece`.
-
-3. **Make Executable:**
-   - Marks the script as executable for system-wide usage.
-
-4. **Clean-Up:**
-   - Deletes the temporary repository directory.
-
----
-
-### Notes
-- If the tool is already installed, the script will stop and display:
-  ```
-  Tool already installed at /usr/local/bin/frece
-  ```
-  To reinstall, manually remove the existing installation:
-  ```bash
-  sudo rm /usr/local/bin/frece
-  ```
-
-- The tool is designed for use on Unix-based systems (Linux or macOS).
-
----
-
-### Troubleshooting
-- **Error: `Command not found`**
-  - Ensure `/usr/local/bin` is included in your system's `PATH`. Add it if missing:
-    ```bash
-    export PATH=$PATH:/usr/local/bin
-    ```
-  
-- **Git Clone Fails:**
-  - Verify your internet connection and that the repository URL is correct:
-    ```bash
-    https://github.com/Nakum-hub/frece.git
-    ```
-
----
-
-### Uninstallation
-To remove FRECE, delete the script from `/usr/local/bin`:
 ```bash
+git clone https://github.com/yourusername/frece.git
+cd frece
+```
+
+### 2. Grant Execution Permissions to the Install Script
+Make sure the `install.sh` script is executable:
+
+```bash
+chmod +x install.sh
+```
+
+### 3. Run the Install Script
+Execute the installation script with `sudo` to set up the necessary environment and dependencies:
+
+```bash
+sudo ./install.sh
+```
+
+### 4. Create a Symbolic Link (Optional)
+If you want to easily run the `frece.py` script from anywhere in the terminal, create a symbolic link:
+
+```bash
+sudo ln -s ~/frece/frece.py /usr/local/bin/frece
+```
+
+If the symbolic link already exists and you get the error `ln: failed to create symbolic link '/usr/local/bin/frece': File exists`, you can remove the old link and recreate it.
+
+```bash
+# Remove existing symbolic link
 sudo rm /usr/local/bin/frece
+
+# Create a new symbolic link
+sudo ln -s ~/frece/frece.py /usr/local/bin/frece
+```
+
+### 5. Install Dependencies
+FRECE requires some Python dependencies. You can install them via `pip`:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3-pip
+sudo pip3 install -r requirements.txt
+```
+
+### 6. Run the Tool
+Once everything is set up, you can run the `frece` tool from anywhere in the terminal:
+
+```bash
+frece
+```
+
+If you encounter any errors, refer to the troubleshooting section below for common issues.
+
+---
+
+## Troubleshooting
+
+### Error: `ln: failed to create symbolic link '/usr/local/bin/frece': File exists`
+
+This error occurs if a symbolic link or file already exists at the target location. To fix this:
+1. Remove the existing symbolic link:
+
+    ```bash
+    sudo rm /usr/local/bin/frece
+    ```
+
+2. Recreate the symbolic link:
+
+    ```bash
+    sudo ln -s ~/frece/frece.py /usr/local/bin/frece
+    ```
+
+### Error: Missing Python Dependencies
+
+If you encounter missing module errors or dependency issues, ensure that you have installed the required packages:
+
+```bash
+sudo apt-get install -y python3-pip
+sudo pip3 install -r requirements.txt
+```
+
+If the dependencies are still not working, consider reinstalling the tool and dependencies:
+
+```bash
+sudo python3 setup.py install
+```
+
+### Error: Permission Denied During Installation
+
+If you face permission issues while installing, make sure you are running the installation script as `sudo`:
+
+```bash
+sudo ./install.sh
 ```
 
 ---
+
+## Common Cleanup and Maintenance Commands
+
+To resolve general system errors, clear old packages, and maintain your environment, use the following commands:
+
+### 1. Update System and Remove Old Packages
+```bash
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get autoremove
+sudo apt-get clean
+```
+
+### 2. Reset Python Environment
+If the Python environment is causing issues, you can create a new virtual environment and activate it:
+
+```bash
+sudo apt install python3-venv  # Install virtual environment tools
+python3 -m venv venv  # Create a virtual environment
+source venv/bin/activate  # Activate the environment
+```
+
+---
+
+
+
+---
+
+This `README.md` provides clear installation instructions, troubleshooting steps, and maintenance commands to ensure you can easily set up, use, and troubleshoot **FRECE (File Recovery Console)**.
 
 ### Contribution
 Feel free to contribute to the FRECE project by submitting issues or pull requests to the repository:
