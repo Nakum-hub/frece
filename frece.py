@@ -20,8 +20,15 @@ else:
 # Initialize colorama
 init(autoreset=True)
 
-# Display Dynamic Banner
+# Constants
+RECOVERY_DIR = os.path.join(Path.home(), "Desktop", "Recovered_files")
+
+# ================== Utility Functions ==================
+
 def display_dynamic_banner():
+    """
+    Displays a dynamic banner for the tool.
+    """
     banners = [
         f"""{Fore.RED}
    **** **  **                                                                               
@@ -33,53 +40,39 @@ def display_dynamic_banner():
   /**  /** ***//******      /***   //******//***** //******   //**   //******/***     **     
   //   // ///  //////       ///     //////  /////   //////     //     ////// ///     //      
 {Fore.CYAN}File Recovery Tool
-{Style.RESET_ALL}""",
-        
-        f"""{Fore.GREEN}
-ffffffffffffffff    iiii  lllllll                                                                                                                                                                                          
-f::::::::::::::::f  i::::i l:::::l                                                                                                                                                                                          
-f::::::::::::::::::f  iiii  l:::::l                                                                                                                                                                                          
-f::::::fffffff:::::f        l:::::l                                                                                                                                                                                          
-f:::::f       ffffffiiiiiii  l::::l     eeeeeeeeeeee         rrrrr   rrrrrrrrr       eeeeeeeeeeee        cccccccccccccccc   ooooooooooo vvvvvvv           vvvvvvv eeeeeeeeeeee    rrrrr   rrrrrrrrryyyyyyy           yyyyyyy
-f:::::f             i:::::i  l::::l   ee::::::::::::ee       r::::rrr:::::::::r    ee::::::::::::ee    cc:::::::::::::::c oo:::::::::::oov:::::v         v:::::vee::::::::::::ee  r::::rrr:::::::::ry:::::y         y:::::y 
-f:::::::ffffff        i::::i  l::::l  e::::::eeeee:::::ee     r:::::::::::::::::r  e::::::eeeee:::::ee c:::::::::::::::::co:::::::::::::::ov:::::v       v:::::ve::::::eeeee:::::eer:::::::::::::::::ry:::::y       y:::::y  
-f::::::::::::f        i::::i  l::::l e::::::e     e:::::e     rr::::::rrrrr::::::re::::::e     e:::::ec:::::::cccccc:::::co:::::ooooo:::::o v:::::v     v:::::ve::::::e     e:::::err::::::rrrrr::::::ry:::::y     y:::::y   
-f::::::::::::f        i::::i  l::::l e:::::::eeeee::::::e      r:::::r     r:::::re:::::::eeeee::::::ec::::::c     ccccccco::::o     o::::o  v:::::v   v:::::v e:::::::eeeee::::::e r:::::r     r:::::r y:::::y   y:::::y    
-f:::::::ffffff        i::::i  l::::l e:::::::::::::::::e       r:::::r     rrrrrrre:::::::::::::::::e c:::::c             o::::o     o::::o   v:::::v v:::::v  e:::::::::::::::::e  r:::::r     rrrrrrr  y:::::y y:::::y     
-f:::::f              i::::i  l::::l e::::::eeeeeeeeeee        r:::::r            e::::::eeeeeeeeeee  c:::::c             o::::o     o::::o    v:::::v:::::v   e::::::eeeeeeeeeee   r:::::r               y:::::y:::::y      
-f:::::f              i::::i  l::::l e:::::::e                 r:::::r            e:::::::e           c::::::c     ccccccco::::o     o::::o     v:::::::::v    e:::::::e            r:::::r                y:::::::::y       
-f:::::::f            i::::::il::::::le::::::::e                r:::::r            e::::::::e          c:::::::cccccc:::::co:::::ooooo:::::o      v:::::::v     e::::::::e           r:::::r                 y:::::::y        
-f:::::::f            i::::::il::::::l e::::::::eeeeeeee        r:::::r             e::::::::eeeeeeee   c:::::::::::::::::co:::::::::::::::o       v:::::v       e::::::::eeeeeeee   r:::::r                  y:::::y         
-f:::::::f            i::::::il::::::l  ee:::::::::::::e        r:::::r              ee:::::::::::::e    cc:::::::::::::::c oo:::::::::::oo         v:::v         ee:::::::::::::e   r:::::r                 y:::::y          
-ffffffff            iiiiiiiillllllll    eeeeeeeeeeeeee        rrrrrrr                eeeeeeeeeeeeee      cccccccccccccccc   ooooooooooo            vvv            eeeeeeeeeeeeee   rrrrrrr                y:::::y           
-                                                                                                                                                                                                           y:::::y            
-                                                                                                                                                                                                          y:::::y             
-                                                                                                                                                                                                         y:::::y              
-                                                                                                                                                                                                        y:::::y               
-                                                                                                                                                                                                       yyyyyyy                
-{Fore.CYAN}File Recovery Tool
-{Style.RESET_ALL}""",
-        
-        f"""{Fore.RED}
- ________ ___  ___       _______           ________  _______   ________  ________  ___      ___ _______   ________      ___    ___ 
-|\  _____\\  \|\  \     |\  ___ \         |\   __  \|\  ___ \ |\   ____\|\   __  \|\  \    /  /|\  ___ \ |\   __  \    |\  \  /  /|
-\ \  \__/\ \  \ \  \    \ \   __/|        \ \  \|\  \ \   __/|\ \  \___|\ \  \|\  \ \  \  /  / | \   __/|\ \  \|\  \   \ \  \/  / /
- \ \   __\\ \  \ \  \    \ \  \_|/__       \ \   _  _\ \  \_|/_\ \  \    \ \  \\\  \ \  \/  / / \ \  \_|/_\ \   _  _\   \ \    / / 
-  \ \  \_| \ \  \ \  \____\ \  \_|\ \       \ \  \\  \\ \  \_|\ \ \  \____\ \  \\\  \ \    / /   \ \  \_|\ \ \  \\  \ \  \ \  / / 
-   \ \__\   \ \__\ \_______\\ \_______\       \ \__\\ _\\ \_______\ \_______\ \_______\ \__/ /     \ \_______\ \__\\ _\\ \ \ \/ / / 
-    \|__|    \|__|\|_______| \|_______|        \|__|\|__|\|_______|\|_______|\|_______|\|__|/       \|_______|\|__|\|__|\ \__/ /  
-                                                                                                                         \|__/ /   
-{Fore.CYAN}File Recovery Tool
 {Style.RESET_ALL}"""
     ]
     print(random.choice(banners))  # Randomly select a banner
+
+def install_dependencies():
+    """
+    Automatically installs required tools like TestDisk and PhotoRec.
+    """
+    tools = ["testdisk", "photorec"]
+    missing_tools = [tool for tool in tools if not shutil.which(tool)]
+    
+    if missing_tools:
+        print("Installing missing dependencies:", ", ".join(missing_tools))
+        try:
+            subprocess.run(["sudo", "apt", "update"], check=True)
+            subprocess.run(["sudo", "apt", "install", "-y"] + missing_tools, check=True)
+            print("Dependencies installed successfully.")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to install dependencies: {e}")
+            sys.exit(1)
+    else:
+        print("All required dependencies are already installed.")
+
+# ================== Core Recovery Class ==================
 
 class FRECE:
     def __init__(self):
         self.version = "FRECE v1.0"
 
     def scan_directory(self, directory, extension=None):
-        """Scans the directory and returns a list of files, optionally filtering by extension."""
+        """
+        Scans the directory and returns a list of files, optionally filtering by extension.
+        """
         try:
             if not os.path.exists(directory):
                 print(Fore.RED + f"Directory {directory} does not exist.")
@@ -93,7 +86,9 @@ class FRECE:
             return []
 
     def recover_files(self, source, target):
-        """Recovers files from source directory to the target directory."""
+        """
+        Recovers files from the source directory to the target directory.
+        """
         if not os.path.exists(target):
             os.makedirs(target)
         try:
@@ -108,34 +103,39 @@ class FRECE:
             print(Fore.RED + f"Error during file recovery: {e}")
 
     def show_help(self):
-        """Displays help for available commands."""
+        """
+        Displays help for available commands.
+        """
         print(Fore.CYAN + """Available Commands:
     recover <source_dir> <target_dir> - Recover files from source to target.
     scan <directory> [extension]      - Scan directory for files, optionally filter by extension.
     man <command>                    - Show manual for a command.
     --version                        - Show the tool version.
-    --help                           - Show this help.""" )
+    --help                           - Show this help.""")
 
     def show_command_man(self, command):
-        """Displays the manual for a specific command."""
-        if command == 'recover':
-            print(Fore.CYAN + """
+        """
+        Displays the manual for a specific command.
+        """
+        manuals = {
+            'recover': """
 Recover Command:
 Usage: recover <source_dir> <target_dir>
 Description: This command recovers files from the source directory to the target directory.
-            """)
-        elif command == 'scan':
-            print(Fore.CYAN + """
+            """,
+            'scan': """
 Scan Command:
 Usage: scan <directory> [extension]
 Description: This command scans the specified directory and returns a list of files.
              Optionally, filter files by their extension.
-            """)
-        else:
-            print(Fore.RED + "No manual found for this command.")
+            """
+        }
+        print(Fore.CYAN + manuals.get(command, "No manual found for this command."))
 
     def interactive_mode(self):
-        """Interactive mode to handle user commands."""
+        """
+        Interactive mode to handle user commands.
+        """
         print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
         while True:
             command = input(Fore.YELLOW + "Enter command: ").strip()
@@ -161,60 +161,31 @@ Description: This command scans the specified directory and returns a list of fi
                 print(Fore.RED + "Invalid command. Type '--help' for a list of commands.")
 
     def start(self):
-        """Entry point for the tool."""
+        """
+        Entry point for the tool.
+        """
         if len(sys.argv) > 1:
-            if sys.argv[1] == '--version':
+            args = sys.argv[1:]
+            if args[0] == '--version':
                 print(self.version)
-            elif sys.argv[1] == '--help':
+            elif args[0] == '--help':
                 self.show_help()
-            elif sys.argv[1] == 'recover':
-                source, target = sys.argv[2], sys.argv[3]
-                self.recover_files(source, target)
-            elif sys.argv[1] == 'scan':
-                directory = sys.argv[2]
-                extension = sys.argv[3] if len(sys.argv) > 3 else None
-                files = self.scan_directory(directory, extension)
+            elif args[0] == 'recover':
+                self.recover_files(args[1], args[2])
+            elif args[0] == 'scan':
+                extension = args[2] if len(args) > 2 else None
+                files = self.scan_directory(args[1], extension)
                 print(f"Found {len(files)} files.")
-            elif sys.argv[1] == 'man':
-                self.show_command_man(sys.argv[2])
+            elif args[0] == 'man':
+                self.show_command_man(args[1])
             else:
                 print(Fore.RED + "Invalid command. Type '--help' for usage.")
         else:
             display_dynamic_banner()
             self.interactive_mode()
 
-if __name__ == "__main__":
-    tool = FRECE()
-    tool.start()
+# ================== Recovery Tools ==================
 
-
-# ======= 1st Code =======
-
-
-# Set recovery directory to Desktop's Recovered_files
-RECOVERY_DIR = os.path.join(Path.home(), "Desktop", "Recovered_files")
-
-# Install dependencies automatically
-def install_dependencies():
-    """
-    Automatically installs required tools like TestDisk and PhotoRec.
-    """
-    tools = ["testdisk", "photorec"]
-    missing_tools = [tool for tool in tools if not shutil.which(tool)]
-    
-    if missing_tools:
-        print("Installing missing dependencies:", ", ".join(missing_tools))
-        try:
-            subprocess.run(["sudo", "apt", "update"], check=True)
-            subprocess.run(["sudo", "apt", "install", "-y"] + missing_tools, check=True)
-            print("Dependencies installed successfully.")
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to install dependencies: {e}")
-            sys.exit(1)
-    else:
-        print("All required dependencies are already installed.")
-
-# Directory Scanning
 def scan_all_files(directory):
     """
     Recursively scans directories for all types of files.
@@ -228,7 +199,6 @@ def scan_all_files(directory):
         print(f"Error scanning directory: {e}")
         return []
 
-# File Recovery
 def recover_all_files(files):
     """
     Copies detected files to the RECOVERY_DIR.
@@ -246,7 +216,6 @@ def recover_all_files(files):
             print(f"Error recovering {file}: {e}")
     print(f"Recovered files are stored in: {RECOVERY_DIR}")
 
-# TestDisk Automation
 def run_testdisk_automated():
     """
     Automates TestDisk recovery process.
@@ -258,7 +227,6 @@ def run_testdisk_automated():
     except subprocess.CalledProcessError as e:
         print("Error occurred while running TestDisk:", e)
 
-# PhotoRec Automation
 def run_photorec_automated():
     """
     Automates PhotoRec recovery process and directs output to RECOVERY_DIR.
@@ -270,7 +238,6 @@ def run_photorec_automated():
     except subprocess.CalledProcessError as e:
         print("Error occurred while running PhotoRec:", e)
 
-# Unified Recovery Menu
 def recovery_with_tools():
     """
     Unified function to handle recovery with TestDisk and PhotoRec.
@@ -289,13 +256,13 @@ def recovery_with_tools():
     else:
         print("Invalid choice. Please try again.")
 
-# Main CLI
+# ================== Main CLI ==================
+
 def main():
     """
     Main function to handle command-line arguments for directory scanning,
     file recovery, and advanced recovery tools.
     """
-    # Ensure dependencies are installed
     install_dependencies()
 
     print("Welcome to FRECE Recovery Tool!")
@@ -318,16 +285,16 @@ def main():
             return
         
         recover_all_files(files)
-    
     elif choice == "2":
         recovery_with_tools()
-    
     elif choice == "3":
         print("Exiting the tool.")
         sys.exit(0)
-    
     else:
         print("Invalid option. Please try again.")
 
+# ================== Execution ==================
+
 if __name__ == "__main__":
-    main()
+    tool = FRECE()
+    tool.start()
