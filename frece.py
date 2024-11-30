@@ -229,12 +229,12 @@ class FRECE:
 # No additional content changes; all errors fixed related to indentation, block structure, and variable definition.
 
 
-        def interactive_mode(self):
-            """
-            Interactive mode for the FRECE tool with looping until 'exit' is entered.
-            """
-            print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
-            while True:
+    def interactive_mode(self):
+        """
+        Interactive mode for the FRECE tool with looping until 'exit' is entered.
+        """
+        print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
+        while True:
                 try:
                     command = input(Fore.YELLOW + "frece > ").strip()
                     if command.startswith("recover"):
