@@ -95,7 +95,7 @@ class FRECE:
             return []
 
 
-    def list_files_with_types(directory):
+    def list_files_with_types(self, directory):
         """
         Lists the types of files in the directory and counts their occurrences.
         """
@@ -108,8 +108,8 @@ class FRECE:
         file_types = {}
         for file in Path(directory).rglob('*'):
             if file.is_file():
-             ext = file.suffix.lower() or "No Extension"
-            file_types[ext] = file_types.get(ext, 0) + 1
+                ext = file.suffix.lower() or "No Extension"
+                file_types[ext] = file_types.get(ext, 0) + 1
 
         print(Fore.CYAN + "File Types Found:")
         for ext, count in file_types.items():
@@ -224,77 +224,77 @@ class FRECE:
 # No additional content changes; all errors fixed related to indentation, block structure, and variable definition.
 
 
-def interactive_mode(self):
-    """
-
-    Updated interactive mode with a new 'list' command.
-
-    """
-    print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
-    while True:
-        command = input(Fore.YELLOW + "Enter command: ").strip()
-        if command.startswith("recover"):
-            _, source, target = command.split()
-            self.recover_files(source, target)
-        elif command.startswith("scan"):
-            _, directory, *ext = command.split()
-            ext = ext[0] if ext else None
-            files = self.scan_directory(directory, ext)
-            print(Fore.GREEN + f"Found {len(files)} files.")
-        elif command.startswith("list"):
-            _, directory = command.split()
-            list_files_with_types(directory)
-        elif command.startswith("man"):
-            _, cmd = command.split()
-            self.show_command_man(cmd)
-        elif command == "testdisk":
-            self.run_testdisk()
-        elif command == "photorec":
-            self.run_photorec()
-        elif command.startswith("save"):
-            _, directory = command.split()
-            self.save_recovery(directory)
-        elif command == "--version":
-            print(self.version)
-        elif command == "--help":
-            self.show_help()
-        elif command == "exit":
-            print(Fore.GREEN + "Exiting interactive mode.")
-            break
-        else:
-            print(Fore.RED + "Invalid command. Type '--help' for a list of commands.")
-
-
-
-def start(self):
+    def interactive_mode(self):
         """
-        Entry point for the tool to process CLI arguments or launch interactive mode.
+
+        Updated interactive mode with a new 'list' command.
+
         """
-        if len(sys.argv) > 1:
-            args = sys.argv[1:]
-            if args[0] == '--version':
-                print(self.version)
-            elif args[0] == '--help':
-                self.show_help()
-            elif args[0] == 'recover':
-                self.recover_files(args[1], args[2])
-            elif args[0] == 'scan':
-                extension = args[2] if len(args) > 2 else None
-                files = self.scan_directory(args[1], extension)
-                print(f"Found {len(files)} files.")
-            elif args[0] == 'man':
-                self.show_command_man(args[1])
-            elif args[0] == 'testdisk':
+        print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
+        while True:
+            command = input(Fore.YELLOW + "Enter command: ").strip()
+            if command.startswith("recover"):
+                _, source, target = command.split()
+                self.recover_files(source, target)
+            elif command.startswith("scan"):
+                _, directory, *ext = command.split()
+                ext = ext[0] if ext else None
+                files = self.scan_directory(directory, ext)
+                print(Fore.GREEN + f"Found {len(files)} files.")
+            elif command.startswith("list"):
+                _, directory = command.split()
+                self.list_files_with_types(directory)  # Call the method correctly
+            elif command.startswith("man"):
+                _, cmd = command.split()
+                self.show_command_man(cmd)
+            elif command == "testdisk":
                 self.run_testdisk()
-            elif args[0] == 'photorec':
+            elif command == "photorec":
                 self.run_photorec()
-            elif args[0] == 'save':
-                self.save_recovery(args[1])
+            elif command.startswith("save"):
+                _, directory = command.split()
+                self.save_recovery(directory)
+            elif command == "--version":
+                print(self.version)
+            elif command == "--help":
+                self.show_help()
+            elif command == "exit":
+                print(Fore.GREEN + "Exiting interactive mode.")
+                break
             else:
-                print(Fore.RED + "Invalid command. Type '--help' for usage.")
-        else:
-            display_dynamic_banner()
-            self.interactive_mode()
+                print(Fore.RED + "Invalid command. Type '--help' for a list of commands.")
+
+
+
+    def start(self):
+            """
+            Entry point for the tool to process CLI arguments or launch interactive mode.
+            """
+            if len(sys.argv) > 1:
+                args = sys.argv[1:]
+                if args[0] == '--version':
+                    print(self.version)
+                elif args[0] == '--help':
+                    self.show_help()
+                elif args[0] == 'recover':
+                    self.recover_files(args[1], args[2])
+                elif args[0] == 'scan':
+                    extension = args[2] if len(args) > 2 else None
+                    files = self.scan_directory(args[1], extension)
+                    print(f"Found {len(files)} files.")
+                elif args[0] == 'man':
+                    self.show_command_man(args[1])
+                elif args[0] == 'testdisk':
+                    self.run_testdisk()
+                elif args[0] == 'photorec':
+                    self.run_photorec()
+                elif args[0] == 'save':
+                    self.save_recovery(args[1])
+                else:
+                    print(Fore.RED + "Invalid command. Type '--help' for usage.")
+            else:
+                display_dynamic_banner()
+                self.interactive_mode()
 
 # ================== Execution ==================
 
