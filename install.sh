@@ -2,21 +2,56 @@
 
 # Variables
 REPO_URL="https://github.com/Nakum-hub/frece.git"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="/usr/local/bin"  # Default installation directory
 TOOL_NAME="frece"
 SCRIPT_NAME="frece.py"
 VENV_DIR="$HOME/frece_venv"  # Virtual environment location
+FRECE_DIR="$INSTALL_DIR/frece"  # Directory for future installations inside /usr/local/bin
 
-# Update functionality
+# Function to create directories
+create_directories() {
+    # Create the installation directory if it doesn't exist
+    if [ ! -d "$INSTALL_DIR" ]; then
+        echo "Creating installation directory at $INSTALL_DIR..."
+        sudo mkdir -p "$INSTALL_DIR" || {
+            echo "Failed to create installation directory. Exiting."
+            exit 1
+        }
+    }
+
+    # Create the frece directory for future tool updates if it doesn't exist
+    if [ ! -d "$FRECE_DIR" ]; then
+        echo "Creating $FRECE_DIR directory for future installations..."
+        sudo mkdir -p "$FRECE_DIR" || {
+            echo "Failed to create frece directory. Exiting."
+            exit 1
+        }
+    }
+
+    # Create the tool's repository directory inside the frece directory if it doesn't exist
+    REPO_DIR="$FRECE_DIR/$TOOL_NAME-repo"
+    if [ ! -d "$REPO_DIR" ]; then
+        echo "Creating tool repository directory at $REPO_DIR..."
+        sudo mkdir -p "$REPO_DIR" || {
+            echo "Failed to create repository directory. Exiting."
+            exit 1
+        }
+    }
+}
+
+# Install or update functionality
 if [ "$1" == "--update" ]; then
-    if [ -d "$INSTALL_DIR/$TOOL_NAME-repo" ]; then
+    create_directories  # Ensure the directories are created if updating
+
+    # Update functionality
+    if [ -d "$REPO_DIR" ]; then
         echo "Updating the tool..."
-        cd "$INSTALL_DIR/$TOOL_NAME-repo"
+        cd "$REPO_DIR"
         sudo git pull || {
             echo "Failed to pull updates. Please check your network connection."
             exit 1
         }
-        sudo cp "$INSTALL_DIR/$TOOL_NAME-repo/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
+        sudo cp "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
         sudo chmod +x "$INSTALL_DIR/$TOOL_NAME"
         echo "Tool updated successfully!"
     else
@@ -82,26 +117,24 @@ pip install colorama || {
 deactivate
 
 # Clone the repository directly into the installation directory
-echo "Cloning the repository directly into $INSTALL_DIR..."
-git clone "$REPO_URL" "$INSTALL_DIR/$TOOL_NAME-repo"
+echo "Cloning the repository directly into $REPO_DIR..."
+git clone "$REPO_URL" "$REPO_DIR"
 
 # Check if cloning was successful
-if [ ! -d "$INSTALL_DIR/$TOOL_NAME-repo" ]; then
+if [ ! -d "$REPO_DIR" ]; then
     echo "Failed to clone repository. Exiting installation."
     exit 1
 fi
 
 # Move the main script to the installation directory
 echo "Setting up the tool..."
-mv "$INSTALL_DIR/$TOOL_NAME-repo/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
+mv "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
 
 # Make the script executable
 chmod +x "$INSTALL_DIR/$TOOL_NAME"
 
 # Remove the cloned repository directory (clean-up)
-rm -rf "$INSTALL_DIR/$TOOL_NAME-repo"
-
-
+rm -rf "$REPO_DIR"
 
 # Display the success message
 echo "Installation successful! To run '$TOOL_NAME', activate the virtual environment:"
