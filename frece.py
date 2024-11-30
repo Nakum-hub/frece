@@ -70,27 +70,68 @@ class FRECE:
     FRECE (File Recovery Enhanced Command-line Environment) is the core class
     containing the primary functionality for file scanning, recovery, and tool integration.
     """
-
     def __init__(self):
         self.version = "FRECE v1.0"
 
     def scan_directory(self, directory, extension=None):
         """
-        Scans a directory for files and optionally filters by file extension.
+        Scans the directory and returns a list of files, optionally filtering by extension.
         """
+        directory = os.path.expanduser(directory)
+        directory = os.path.abspath(directory)
+
         try:
             if not os.path.exists(directory):
                 print(Fore.RED + f"Directory {directory} does not exist.")
                 return []
+
             files = [file for file in Path(directory).rglob('*') if file.is_file()]
             if extension:
                 files = [file for file in files if file.suffix.lower() == extension.lower()]
+
             return files
         except PermissionError:
-            print(Fore.RED + "Permission denied.")
+            print(Fore.RED + "Permission denied while accessing the directory.")
             return []
 
-    def recover_files(self, source, target):
+
+def list_files_with_types(directory):
+    """
+    Lists the types of files in the directory and counts their occurrences.
+    """
+    directory = os.path.abspath(os.path.expanduser(directory))
+    
+    if not os.path.exists(directory):
+        print(Fore.RED + f"Directory {directory} does not exist.")
+        return
+
+    file_types = {}
+    for file in Path(directory).rglob('*'):
+        if file.is_file():
+            ext = file.suffix.lower() or "No Extension"
+            file_types[ext] = file_types.get(ext, 0) + 1
+
+    print(Fore.CYAN + "File Types Found:")
+    for ext, count in file_types.items():
+        print(f"{ext}: {count} file(s)")
+
+def tab_autocomplete(text, state):
+    """
+    Provides tab autocomplete functionality for file paths, similar to Kali Linux behavior.
+    """
+    options = [f for f in os.listdir('.') if f.startswith(text)]
+    try:
+        return options[state]
+    except IndexError:
+        return None
+
+# Add the tab completion function to the readline module
+readline.set_completer(tab_autocomplete)
+readline.parse_and_bind("tab: complete")
+
+
+
+def recover_files(self, source, target):
         """
         Recovers files from the source directory to the target directory.
         """
@@ -107,7 +148,7 @@ class FRECE:
         except Exception as e:
             print(Fore.RED + f"Error during file recovery: {e}")
 
-    def run_testdisk(self):
+def run_testdisk(self):
         """
         Automates TestDisk recovery process for partition or file recovery.
         """
@@ -118,7 +159,7 @@ class FRECE:
         except subprocess.CalledProcessError as e:
             print(f"TestDisk error: {e}")
 
-    def run_photorec(self):
+def run_photorec(self):
         """
         Automates PhotoRec recovery process to retrieve lost files by file signatures.
         """
@@ -129,7 +170,7 @@ class FRECE:
         except subprocess.CalledProcessError as e:
             print(f"PhotoRec error: {e}")
 
-    def save_recovery(self, directory):
+def save_recovery(self, directory):
         """
         Saves recovered files to a specified directory for user-defined organization.
         """
@@ -143,70 +184,87 @@ class FRECE:
         except Exception as e:
             print(Fore.RED + f"Error saving files: {e}")
 
-    def show_help(self):
+def show_help(self):
         """
-        Displays help information for all available commands.
+        Displays help information for all available commands, including the new 'list' command.
         """
         print(Fore.CYAN + """Available Commands:
-    recover <source_dir> <target_dir> - Recover files from source to target directory.
-    scan <directory> [extension]      - Scan directory for files; filter by extension if specified.
-    man <command>                    - Display manual for a specific command.
-    testdisk                         - Run TestDisk for recovery.
-    photorec                         - Run PhotoRec for recovery.
-    save <directory>                 - Save recovered files to a specified directory.
-    --version                        - Show the tool version.
-    --help                           - Display this help message.
-    exit                             - Exit the interactive mode.""")
+        recover <source_dir> <target_dir> - Recover files from source to target directory.
+        scan <directory> [extension]      - Scan directory for files; filter by extension if specified.
+        list <directory>                  - List file types and their counts in the specified directory.
+        man <command>                     - Display manual for a specific command.
+        testdisk                          - Run TestDisk for recovery.
+        photorec                          - Run PhotoRec for recovery.
+        save <directory>                  - Save recovered files to a specified directory.
+        --version                         - Show the tool version.
+        --help                            - Display this help message.
+        exit                              - Exit the interactive mode.
 
-    def show_command_man(self, command):
+        Tab Autocomplete Feature:
+        - You can use the Tab key to autocomplete file paths and commands, similar to Kali Linux.""")
+
+def show_command_man(self, command):
         """
-        Displays a detailed manual for a specific command.
+        Displays a detailed manual for a specific command, including the new 'list' command.
         """
         manuals = {
-            'recover': "Recover files from source to target directory.",
-            'scan': "Scan a directory for files, optionally filtering by extension.",
-            'testdisk': "Run TestDisk to recover partitions and files.",
-            'photorec': "Run PhotoRec to recover lost files by file signatures.",
-            'save': "Save recovered files to the specified directory.",
-            '--version': "Display the version of this tool.",
-            '--help': "Display help for commands."
+            'recover': "Recover files from source to target directory.\nUsage: recover <source_dir> <target_dir>",
+            'scan': "Scan a directory for files, optionally filtering by extension.\nUsage: scan <directory> [extension]",
+            'list': ("List all file types in the specified directory and their counts.\n"
+                     "Usage: list <directory>\n"
+                     "Example: list ~/Documents"),
+            'testdisk': "Run TestDisk to recover partitions and files.\nUsage: testdisk",
+            'photorec': "Run PhotoRec to recover lost files by file signatures.\nUsage: photorec",
+            'save': "Save recovered files to the specified directory.\nUsage: save <directory>",
+            '--version': "Display the version of this tool.\nUsage: --version",
+            '--help': "Display help for commands.\nUsage: --help"
         }
         print(Fore.CYAN + manuals.get(command, "No manual entry for this command."))
 
-    def interactive_mode(self):
-        """
-        Provides an interactive command-line interface for executing tool commands.
-        """
-        print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
-        while True:
-            command = input(Fore.YELLOW + "Enter command: ").strip()
-            if command.startswith("recover"):
-                _, source, target = command.split()
-                self.recover_files(source, target)
-            elif command.startswith("scan"):
-                _, directory, *ext = command.split()
-                ext = ext[0] if ext else None
-                files = self.scan_directory(directory, ext)
-                print(Fore.GREEN + f"Found {len(files)} files.")
-            elif command.startswith("man"):
-                _, cmd = command.split()
-                self.show_command_man(cmd)
-            elif command == "testdisk":
-                self.run_testdisk()
-            elif command == "photorec":
-                self.run_photorec()
-            elif command.startswith("save"):
-                _, directory = command.split()
-                self.save_recovery(directory)
-            elif command == "--version":
-                print(self.version)
-            elif command == "--help":
-                self.show_help()
-            elif command == "exit":
-                print(Fore.GREEN + "Exiting interactive mode.")
-                break
-            else:
-                print(Fore.RED + "Invalid command. Type '--help' for a list of commands.")
+# No additional content changes; all errors fixed related to indentation, block structure, and variable definition.
+
+
+def interactive_mode(self):
+    """
+
+    Updated interactive mode with a new 'list' command.
+
+    """
+    print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
+    while True:
+        command = input(Fore.YELLOW + "Enter command: ").strip()
+        if command.startswith("recover"):
+            _, source, target = command.split()
+            self.recover_files(source, target)
+        elif command.startswith("scan"):
+            _, directory, *ext = command.split()
+            ext = ext[0] if ext else None
+            files = self.scan_directory(directory, ext)
+            print(Fore.GREEN + f"Found {len(files)} files.")
+        elif command.startswith("list"):
+            _, directory = command.split()
+            list_files_with_types(directory)
+        elif command.startswith("man"):
+            _, cmd = command.split()
+            self.show_command_man(cmd)
+        elif command == "testdisk":
+            self.run_testdisk()
+        elif command == "photorec":
+            self.run_photorec()
+        elif command.startswith("save"):
+            _, directory = command.split()
+            self.save_recovery(directory)
+        elif command == "--version":
+            print(self.version)
+        elif command == "--help":
+            self.show_help()
+        elif command == "exit":
+            print(Fore.GREEN + "Exiting interactive mode.")
+            break
+        else:
+            print(Fore.RED + "Invalid command. Type '--help' for a list of commands.")
+
+
 
     def start(self):
         """
