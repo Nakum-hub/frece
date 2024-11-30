@@ -133,14 +133,16 @@ class FRECE:
 
 
 
-    def recover_files(self, source, target):
+    def recover_files(self, source, target, extension=None):
         """
         Recovers files from the source directory to the target directory.
+        Optionally filters by extension or specific filename.
         """
         if not os.path.exists(target):
             os.makedirs(target)
+        
         try:
-            files = self.scan_directory(source)
+            files = self.scan_directory(source, extension)  # Filter by extension if provided
             if not files:
                 print(Fore.RED + "No files found to recover.")
                 return
@@ -149,6 +151,7 @@ class FRECE:
                 print(Fore.GREEN + f"Recovered: {file}")
         except Exception as e:
             print(Fore.RED + f"Error during file recovery: {e}")
+
 
     def run_testdisk(self):
         """
@@ -234,14 +237,15 @@ class FRECE:
         """
         print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
         while True:
-            command = input(Fore.YELLOW + "Enter command: ").strip()
+            command = input(Fore.YELLOW + "frece > ").strip()
             if command.startswith("recover"):
                 command_parts = command.split()
-                if len(command_parts) == 3:
+                if len(command_parts) == 3:  # source, target
                     _, source, target = command_parts
-                elif len(command_parts) == 4:
+                    self.recover_files(source, target)
+                elif len(command_parts) == 4:  # source, extension, target
                     _, source, extension, target = command_parts
-                    # Process the additional extension if needed
+                    self.recover_files(source, target, extension)
                 else:
                     print("Invalid number of arguments. Expected 3 or 4.")
                     return
