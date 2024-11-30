@@ -17,17 +17,17 @@ if sys.platform == "win32":
 else:
     import readline  # For command history on Unix-based systems
 
-# Initialize colorama
+# Initialize colorama for terminal colors
 init(autoreset=True)
 
-# Constants
+# Constants for file recovery directory
 RECOVERY_DIR = os.path.join(Path.home(), "Desktop", "Recovered_files")
 
 # ================== Utility Functions ==================
 
 def display_dynamic_banner():
     """
-    Displays a dynamic banner for the tool.
+    Displays a dynamic banner for the tool to make the interface more engaging.
     """
     banners = [
         f"""{Fore.RED}
@@ -42,7 +42,7 @@ def display_dynamic_banner():
 {Fore.CYAN}File Recovery Tool
 {Style.RESET_ALL}"""
     ]
-    print(random.choice(banners))  # Randomly select a banner
+    print(random.choice(banners))  # Display one of the predefined banners randomly
 
 def install_dependencies():
     """
@@ -66,12 +66,17 @@ def install_dependencies():
 # ================== Core Recovery Class ==================
 
 class FRECE:
+    """
+    FRECE (File Recovery Enhanced Command-line Environment) is the core class
+    containing the primary functionality for file scanning, recovery, and tool integration.
+    """
+
     def __init__(self):
         self.version = "FRECE v1.0"
 
     def scan_directory(self, directory, extension=None):
         """
-        Scans the directory and returns a list of files, optionally filtering by extension.
+        Scans a directory for files and optionally filters by file extension.
         """
         try:
             if not os.path.exists(directory):
@@ -102,39 +107,75 @@ class FRECE:
         except Exception as e:
             print(Fore.RED + f"Error during file recovery: {e}")
 
+    def run_testdisk(self):
+        """
+        Automates TestDisk recovery process for partition or file recovery.
+        """
+        print("Running TestDisk...")
+        try:
+            subprocess.run(["testdisk"], check=True)
+            print(f"TestDisk completed. Results saved in: {RECOVERY_DIR}")
+        except subprocess.CalledProcessError as e:
+            print(f"TestDisk error: {e}")
+
+    def run_photorec(self):
+        """
+        Automates PhotoRec recovery process to retrieve lost files by file signatures.
+        """
+        print("Running PhotoRec...")
+        try:
+            subprocess.run(["photorec", "/d", RECOVERY_DIR], check=True)
+            print(f"PhotoRec completed. Results saved in: {RECOVERY_DIR}")
+        except subprocess.CalledProcessError as e:
+            print(f"PhotoRec error: {e}")
+
+    def save_recovery(self, directory):
+        """
+        Saves recovered files to a specified directory for user-defined organization.
+        """
+        print(f"Saving recovered files to {directory}")
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        try:
+            for file in os.listdir(RECOVERY_DIR):
+                shutil.copy(os.path.join(RECOVERY_DIR, file), directory)
+            print(Fore.GREEN + "Files saved successfully.")
+        except Exception as e:
+            print(Fore.RED + f"Error saving files: {e}")
+
     def show_help(self):
         """
-        Displays help for available commands.
+        Displays help information for all available commands.
         """
         print(Fore.CYAN + """Available Commands:
-    recover <source_dir> <target_dir> - Recover files from source to target.
-    scan <directory> [extension]      - Scan directory for files, optionally filter by extension.
-    man <command>                    - Show manual for a command.
+    recover <source_dir> <target_dir> - Recover files from source to target directory.
+    scan <directory> [extension]      - Scan directory for files; filter by extension if specified.
+    man <command>                    - Display manual for a specific command.
+    testdisk                         - Run TestDisk for recovery.
+    photorec                         - Run PhotoRec for recovery.
+    save <directory>                 - Save recovered files to a specified directory.
     --version                        - Show the tool version.
-    --help                           - Show this help.""")
+    --help                           - Display this help message.
+    exit                             - Exit the interactive mode.""")
 
     def show_command_man(self, command):
         """
-        Displays the manual for a specific command.
+        Displays a detailed manual for a specific command.
         """
         manuals = {
-            'recover': """
-Recover Command:
-Usage: recover <source_dir> <target_dir>
-Description: This command recovers files from the source directory to the target directory.
-            """,
-            'scan': """
-Scan Command:
-Usage: scan <directory> [extension]
-Description: This command scans the specified directory and returns a list of files.
-             Optionally, filter files by their extension.
-            """
+            'recover': "Recover files from source to target directory.",
+            'scan': "Scan a directory for files, optionally filtering by extension.",
+            'testdisk': "Run TestDisk to recover partitions and files.",
+            'photorec': "Run PhotoRec to recover lost files by file signatures.",
+            'save': "Save recovered files to the specified directory.",
+            '--version': "Display the version of this tool.",
+            '--help': "Display help for commands."
         }
-        print(Fore.CYAN + manuals.get(command, "No manual found for this command."))
+        print(Fore.CYAN + manuals.get(command, "No manual entry for this command."))
 
     def interactive_mode(self):
         """
-        Interactive mode to handle user commands.
+        Provides an interactive command-line interface for executing tool commands.
         """
         print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
         while True:
@@ -150,6 +191,13 @@ Description: This command scans the specified directory and returns a list of fi
             elif command.startswith("man"):
                 _, cmd = command.split()
                 self.show_command_man(cmd)
+            elif command == "testdisk":
+                self.run_testdisk()
+            elif command == "photorec":
+                self.run_photorec()
+            elif command.startswith("save"):
+                _, directory = command.split()
+                self.save_recovery(directory)
             elif command == "--version":
                 print(self.version)
             elif command == "--help":
@@ -162,7 +210,7 @@ Description: This command scans the specified directory and returns a list of fi
 
     def start(self):
         """
-        Entry point for the tool.
+        Entry point for the tool to process CLI arguments or launch interactive mode.
         """
         if len(sys.argv) > 1:
             args = sys.argv[1:]
@@ -178,120 +226,17 @@ Description: This command scans the specified directory and returns a list of fi
                 print(f"Found {len(files)} files.")
             elif args[0] == 'man':
                 self.show_command_man(args[1])
+            elif args[0] == 'testdisk':
+                self.run_testdisk()
+            elif args[0] == 'photorec':
+                self.run_photorec()
+            elif args[0] == 'save':
+                self.save_recovery(args[1])
             else:
                 print(Fore.RED + "Invalid command. Type '--help' for usage.")
         else:
             display_dynamic_banner()
             self.interactive_mode()
-
-# ================== Recovery Tools ==================
-
-def scan_all_files(directory):
-    """
-    Recursively scans directories for all types of files.
-    """
-    try:
-        print(f"Scanning directory: {directory}")
-        files = [file for file in Path(directory).rglob('*') if file.is_file()]
-        print(f"Found {len(files)} files.")
-        return files
-    except Exception as e:
-        print(f"Error scanning directory: {e}")
-        return []
-
-def recover_all_files(files):
-    """
-    Copies detected files to the RECOVERY_DIR.
-    """
-    if not os.path.exists(RECOVERY_DIR):
-        os.makedirs(RECOVERY_DIR)
-        print(f"Created recovery directory: {RECOVERY_DIR}")
-    
-    for file in files:
-        try:
-            recovery_path = os.path.join(RECOVERY_DIR, os.path.basename(file))
-            shutil.copy(file, recovery_path)
-            print(f"Recovered: {file} -> {recovery_path}")
-        except Exception as e:
-            print(f"Error recovering {file}: {e}")
-    print(f"Recovered files are stored in: {RECOVERY_DIR}")
-
-def run_testdisk_automated():
-    """
-    Automates TestDisk recovery process.
-    """
-    print("Running TestDisk for partition and file recovery...")
-    try:
-        subprocess.run(["testdisk"], check=True)
-        print(f"TestDisk completed. Recovered files are saved in: {RECOVERY_DIR}")
-    except subprocess.CalledProcessError as e:
-        print("Error occurred while running TestDisk:", e)
-
-def run_photorec_automated():
-    """
-    Automates PhotoRec recovery process and directs output to RECOVERY_DIR.
-    """
-    print("Running PhotoRec for file recovery...")
-    try:
-        subprocess.run(["photorec", "/d", RECOVERY_DIR], check=True)
-        print(f"PhotoRec completed. Recovered files are saved in: {RECOVERY_DIR}")
-    except subprocess.CalledProcessError as e:
-        print("Error occurred while running PhotoRec:", e)
-
-def recovery_with_tools():
-    """
-    Unified function to handle recovery with TestDisk and PhotoRec.
-    """
-    print("Choose a recovery method:")
-    print("1. TestDisk - Partition and file system recovery")
-    print("2. PhotoRec - File recovery")
-    print("3. Back to Main Menu")
-    choice = input("Enter your choice: ")
-    if choice == "1":
-        run_testdisk_automated()
-    elif choice == "2":
-        run_photorec_automated()
-    elif choice == "3":
-        return
-    else:
-        print("Invalid choice. Please try again.")
-
-# ================== Main CLI ==================
-
-def main():
-    """
-    Main function to handle command-line arguments for directory scanning,
-    file recovery, and advanced recovery tools.
-    """
-    install_dependencies()
-
-    print("Welcome to FRECE Recovery Tool!")
-    print("Options:")
-    print("1. Scan and recover files from a directory")
-    print("2. Advanced recovery using TestDisk or PhotoRec")
-    print("3. Exit")
-    choice = input("Enter your choice: ")
-    
-    if choice == "1":
-        directory = input("Enter the directory to scan: ")
-        if not os.path.exists(directory):
-            print(f"Directory {directory} does not exist.")
-            sys.exit(1)
-        
-        print(f"Starting scan and recovery...")
-        files = scan_all_files(directory)
-        if not files:
-            print("No files found to recover.")
-            return
-        
-        recover_all_files(files)
-    elif choice == "2":
-        recovery_with_tools()
-    elif choice == "3":
-        print("Exiting the tool.")
-        sys.exit(0)
-    else:
-        print("Invalid option. Please try again.")
 
 # ================== Execution ==================
 
