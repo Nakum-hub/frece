@@ -236,8 +236,16 @@ class FRECE:
         while True:
             command = input(Fore.YELLOW + "Enter command: ").strip()
             if command.startswith("recover"):
-                _, source, target = command.split()
-                self.recover_files(source, target)
+                command_parts = command.split()
+                if len(command_parts) == 3:
+                    _, source, target = command_parts
+                elif len(command_parts) == 4:
+                    _, source, extension, target = command_parts
+                    # Process the additional extension if needed
+                else:
+                    print("Invalid number of arguments. Expected 3 or 4.")
+                    return
+
             elif command.startswith("scan"):
                 _, directory, *ext = command.split()
                 ext = ext[0] if ext else None
