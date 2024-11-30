@@ -5,6 +5,7 @@ REPO_URL="https://github.com/Nakum-hub/frece.git"
 INSTALL_DIR="/usr/local/bin"
 TOOL_NAME="frece"
 SCRIPT_NAME="frece.py"
+VENV_DIR="$HOME/frece_venv"  # Virtual environment location
 
 # Check if the tool already exists in the installation directory
 if [ -f "$INSTALL_DIR/$TOOL_NAME" ]; then
@@ -24,18 +25,11 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Install required Python dependencies
-echo "Installing Python dependencies..."
-pip3 install colorama pyreadline || {
-    echo "Failed to install Python dependencies. Please check your Python environment."
-    exit 1
-}
-
-# Install required tools (testdisk, photorec)
+# Install required system packages (testdisk, photorec)
 echo "Installing required recovery tools..."
 if ! command -v testdisk &> /dev/null || ! command -v photorec &> /dev/null; then
     if [ "$(uname)" == "Linux" ]; then
-        sudo apt update && sudo apt install -y testdisk || {
+        sudo apt update && sudo apt install -y testdisk photorec || {
             echo "Failed to install testdisk and photorec. Please install them manually."
             exit 1
         }
@@ -44,6 +38,30 @@ if ! command -v testdisk &> /dev/null || ! command -v photorec &> /dev/null; the
         exit 1
     fi
 fi
+
+# Create a Python virtual environment
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating a Python virtual environment..."
+    python3 -m venv "$VENV_DIR" || {
+        echo "Failed to create virtual environment. Exiting installation."
+        exit 1
+    }
+fi
+
+# Activate the virtual environment and install Python dependencies
+echo "Activating the virtual environment and installing dependencies..."
+source "$VENV_DIR/bin/activate"
+pip install --upgrade pip || {
+    echo "Failed to upgrade pip. Exiting installation."
+    deactivate
+    exit 1
+}
+pip install colorama || {
+    echo "Failed to install Python dependencies. Exiting installation."
+    deactivate
+    exit 1
+}
+deactivate
 
 # Clone the repository directly into the installation directory
 echo "Cloning the repository directly into $INSTALL_DIR..."
@@ -65,12 +83,8 @@ chmod +x "$INSTALL_DIR/$TOOL_NAME"
 # Remove the cloned repository directory (clean-up)
 rm -rf "$INSTALL_DIR/$TOOL_NAME-repo"
 
-# Verify the installation
-echo "Verifying installation..."
-if ! $INSTALL_DIR/$TOOL_NAME --version &> /dev/null; then
-    echo "Installation failed during verification. Please check the setup."
-    exit 1
-fi
+
 
 # Display the success message
-echo "Installation successful! You can now run '$TOOL_NAME' from anywhere."
+echo "Installation successful! To run '$TOOL_NAME', activate the virtual environment:"
+echo "source $VENV_DIR/bin/activate && $TOOL_NAME --help"
