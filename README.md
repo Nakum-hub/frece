@@ -94,6 +94,15 @@ To update FRECE to the latest version:
 ```bash
 sudo ./install.sh --update
 ```
+if any problem occured while updateing saying " To add an exception for this directory, call:
+
+        git config --global --add safe.directory /path/to/frece
+Failed to pull updates. Please check your network connection. " Then use the below command and then try to update it.
+```bash
+sudo git config --global --add safe.directory /path/to/frece./install.sh 
+sudo ./install.sh --update
+``` 
+
 
 This will pull the latest changes from the repository and replace the existing script.
 
