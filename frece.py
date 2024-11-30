@@ -95,43 +95,43 @@ class FRECE:
             return []
 
 
-def list_files_with_types(directory):
-    """
-    Lists the types of files in the directory and counts their occurrences.
-    """
-    directory = os.path.abspath(os.path.expanduser(directory))
+    def list_files_with_types(directory):
+        """
+        Lists the types of files in the directory and counts their occurrences.
+        """
+        directory = os.path.abspath(os.path.expanduser(directory))
     
-    if not os.path.exists(directory):
-        print(Fore.RED + f"Directory {directory} does not exist.")
-        return
+        if not os.path.exists(directory):
+            print(Fore.RED + f"Directory {directory} does not exist.")
+            return
 
-    file_types = {}
-    for file in Path(directory).rglob('*'):
-        if file.is_file():
-            ext = file.suffix.lower() or "No Extension"
+        file_types = {}
+        for file in Path(directory).rglob('*'):
+            if file.is_file():
+             ext = file.suffix.lower() or "No Extension"
             file_types[ext] = file_types.get(ext, 0) + 1
 
-    print(Fore.CYAN + "File Types Found:")
-    for ext, count in file_types.items():
-        print(f"{ext}: {count} file(s)")
+        print(Fore.CYAN + "File Types Found:")
+        for ext, count in file_types.items():
+            print(f"{ext}: {count} file(s)")
 
-def tab_autocomplete(text, state):
-    """
-    Provides tab autocomplete functionality for file paths, similar to Kali Linux behavior.
-    """
-    options = [f for f in os.listdir('.') if f.startswith(text)]
-    try:
-        return options[state]
-    except IndexError:
-        return None
+    def tab_autocomplete(text, state):
+        """
+        Provides tab autocomplete functionality for file paths, similar to Kali Linux behavior.
+        """
+        options = [f for f in os.listdir('.') if f.startswith(text)]
+        try:
+            return options[state]
+        except IndexError:
+         return None
 
 # Add the tab completion function to the readline module
-readline.set_completer(tab_autocomplete)
-readline.parse_and_bind("tab: complete")
+    readline.set_completer(tab_autocomplete)
+    readline.parse_and_bind("tab: complete")
 
 
 
-def recover_files(self, source, target):
+    def recover_files(self, source, target):
         """
         Recovers files from the source directory to the target directory.
         """
@@ -148,7 +148,7 @@ def recover_files(self, source, target):
         except Exception as e:
             print(Fore.RED + f"Error during file recovery: {e}")
 
-def run_testdisk(self):
+    def run_testdisk(self):
         """
         Automates TestDisk recovery process for partition or file recovery.
         """
@@ -159,7 +159,7 @@ def run_testdisk(self):
         except subprocess.CalledProcessError as e:
             print(f"TestDisk error: {e}")
 
-def run_photorec(self):
+    def run_photorec(self):
         """
         Automates PhotoRec recovery process to retrieve lost files by file signatures.
         """
@@ -170,7 +170,7 @@ def run_photorec(self):
         except subprocess.CalledProcessError as e:
             print(f"PhotoRec error: {e}")
 
-def save_recovery(self, directory):
+    def save_recovery(self, directory):
         """
         Saves recovered files to a specified directory for user-defined organization.
         """
@@ -184,7 +184,7 @@ def save_recovery(self, directory):
         except Exception as e:
             print(Fore.RED + f"Error saving files: {e}")
 
-def show_help(self):
+    def show_help(self):
         """
         Displays help information for all available commands, including the new 'list' command.
         """
@@ -203,7 +203,7 @@ def show_help(self):
         Tab Autocomplete Feature:
         - You can use the Tab key to autocomplete file paths and commands, similar to Kali Linux.""")
 
-def show_command_man(self, command):
+    def show_command_man(self, command):
         """
         Displays a detailed manual for a specific command, including the new 'list' command.
         """
