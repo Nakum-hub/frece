@@ -7,7 +7,7 @@ TOOL_NAME="frece"
 SCRIPT_NAME="frece.py"
 VENV_DIR="$HOME/frece_venv"  # Virtual environment location
 FRECE_DIR="/home/kali/frece"  # The directory where the install.sh script is
-REPO_DIR="$FRECE_DIR/REPO_DIR"  # Directory where the repository will be cloned
+REPO_DIR="$FRECE_DIR/REPO_DIR/subfolder"  # Directory where the repository will be cloned (inside subfolder)
 
 # Function to create directories
 create_directories() {
