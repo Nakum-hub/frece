@@ -6,37 +6,19 @@ INSTALL_DIR="/usr/local/bin"  # Default installation directory
 TOOL_NAME="frece"
 SCRIPT_NAME="frece.py"
 VENV_DIR="$HOME/frece_venv"  # Virtual environment location
-FRECE_DIR="$INSTALL_DIR/frece"  # Directory for future installations inside /usr/local/bin
+FRECE_DIR="/home/kali/frece"  # The directory where the install.sh script is
+REPO_DIR="$FRECE_DIR/REPO_DIR"  # Directory where the repository will be cloned
 
 # Function to create directories
 create_directories() {
-    # Create the installation directory if it doesn't exist
-    if [ ! -d "$INSTALL_DIR" ]; then
-        echo "Creating installation directory at $INSTALL_DIR..."
-        sudo mkdir -p "$INSTALL_DIR" || {
-            echo "Failed to create installation directory. Exiting."
-            exit 1
-        }
-    }
-
-    # Create the frece directory for future tool updates if it doesn't exist
-    if [ ! -d "$FRECE_DIR" ]; then
-        echo "Creating $FRECE_DIR directory for future installations..."
-        sudo mkdir -p "$FRECE_DIR" || {
-            echo "Failed to create frece directory. Exiting."
-            exit 1
-        }
-    }
-
-    # Create the tool's repository directory inside the frece directory if it doesn't exist
-    REPO_DIR="$FRECE_DIR/$TOOL_NAME-repo"
+    # Ensure that the REPO_DIR exists
     if [ ! -d "$REPO_DIR" ]; then
-        echo "Creating tool repository directory at $REPO_DIR..."
-        sudo mkdir -p "$REPO_DIR" || {
-            echo "Failed to create repository directory. Exiting."
+        echo "Creating the REPO_DIR directory..."
+        mkdir -p "$REPO_DIR" || {
+            echo "Failed to create REPO_DIR directory. Exiting."
             exit 1
         }
-    }
+    fi
 }
 
 # Install or update functionality
@@ -47,12 +29,12 @@ if [ "$1" == "--update" ]; then
     if [ -d "$REPO_DIR" ]; then
         echo "Updating the tool..."
         cd "$REPO_DIR"
-        sudo git pull || {
+        git pull || {
             echo "Failed to pull updates. Please check your network connection."
             exit 1
         }
-        sudo cp "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
-        sudo chmod +x "$INSTALL_DIR/$TOOL_NAME"
+        cp "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
+        chmod +x "$INSTALL_DIR/$TOOL_NAME"
         echo "Tool updated successfully!"
     else
         echo "Installation directory not found. Please install the tool first."
@@ -116,9 +98,13 @@ pip install colorama || {
 }
 deactivate
 
-# Clone the repository directly into the installation directory
-echo "Cloning the repository directly into $REPO_DIR..."
-git clone "$REPO_URL" "$REPO_DIR"
+# Create the REPO_DIR directory and clone the repository into it
+create_directories  # Ensure the REPO_DIR directory exists
+echo "Cloning the repository into $REPO_DIR..."
+git clone "$REPO_URL" "$REPO_DIR" || {
+    echo "Failed to clone repository. Exiting installation."
+    exit 1
+}
 
 # Check if cloning was successful
 if [ ! -d "$REPO_DIR" ]; then
@@ -133,7 +119,7 @@ mv "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
 # Make the script executable
 chmod +x "$INSTALL_DIR/$TOOL_NAME"
 
-# Remove the cloned repository directory (clean-up)
+# Clean up by removing the cloned repository folder
 rm -rf "$REPO_DIR"
 
 # Display the success message

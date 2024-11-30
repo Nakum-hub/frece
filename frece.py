@@ -77,6 +77,7 @@ class FRECE:
         """
         Scans the directory and returns a list of files, optionally filtering by extension.
         """
+        # Expand shorthand paths (e.g., ~) and resolve relative paths
         directory = os.path.expanduser(directory)
         directory = os.path.abspath(directory)
 
@@ -93,6 +94,7 @@ class FRECE:
         except PermissionError:
             print(Fore.RED + "Permission denied while accessing the directory.")
             return []
+
 
 
     def list_files_with_types(self, directory):
