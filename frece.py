@@ -229,54 +229,80 @@ class FRECE:
 # No additional content changes; all errors fixed related to indentation, block structure, and variable definition.
 
 
-    def interactive_mode(self):
-        """
+        def interactive_mode(self):
+            """
+            Interactive mode for the FRECE tool with looping until 'exit' is entered.
+            """
+            print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
+            while True:
+                try:
+                    command = input(Fore.YELLOW + "frece > ").strip()
+                    if command.startswith("recover"):
+                        command_parts = command.split()
+                        if len(command_parts) == 3:  # source, target
+                            _, source, target = command_parts
+                            self.recover_files(source, target)
+                        elif len(command_parts) == 4:  # source, extension, target
+                            _, source, extension, target = command_parts
+                            self.recover_files(source, target, extension)
+                        else:
+                            print(Fore.RED + "Invalid number of arguments. Usage: recover <source_dir> [extension] <target_dir>")
 
-        Updated interactive mode with a new 'list' command.
+                    elif command.startswith("scan"):
+                        parts = command.split(maxsplit=2)
+                        if len(parts) >= 2:
+                            directory = parts[1]
+                            ext = parts[2] if len(parts) == 3 else None
+                            files = self.scan_directory(directory, ext)
+                            print(Fore.GREEN + f"Found {len(files)} files.")
+                        else:
+                            print(Fore.RED + "Usage: scan <directory> [extension]")
 
-        """
-        print(Fore.GREEN + f"Welcome to FRECE interactive mode!")
-        while True:
-            command = input(Fore.YELLOW + "frece > ").strip()
-            if command.startswith("recover"):
-                command_parts = command.split()
-                if len(command_parts) == 3:  # source, target
-                    _, source, target = command_parts
-                    self.recover_files(source, target)
-                elif len(command_parts) == 4:  # source, extension, target
-                    _, source, extension, target = command_parts
-                    self.recover_files(source, target, extension)
-                else:
-                    print("Invalid number of arguments. Expected 3 or 4.")
-                    return
+                    elif command.startswith("list"):
+                        parts = command.split(maxsplit=1)
+                        if len(parts) == 2:
+                            directory = parts[1]
+                            self.list_files_with_types(directory)
+                        else:
+                            print(Fore.RED + "Usage: list <directory>")
 
-            elif command.startswith("scan"):
-                _, directory, *ext = command.split()
-                ext = ext[0] if ext else None
-                files = self.scan_directory(directory, ext)
-                print(Fore.GREEN + f"Found {len(files)} files.")
-            elif command.startswith("list"):
-                _, directory = command.split()
-                self.list_files_with_types(directory)  # Call the method correctly
-            elif command.startswith("man"):
-                _, cmd = command.split()
-                self.show_command_man(cmd)
-            elif command == "testdisk":
-                self.run_testdisk()
-            elif command == "photorec":
-                self.run_photorec()
-            elif command.startswith("save"):
-                _, directory = command.split()
-                self.save_recovery(directory)
-            elif command == "--version":
-                print(self.version)
-            elif command == "--help":
-                self.show_help()
-            elif command == "exit":
-                print(Fore.GREEN + "Exiting interactive mode.")
-                break
-            else:
-                print(Fore.RED + "Invalid command. Type '--help' for a list of commands.")
+                    elif command.startswith("man"):
+                        parts = command.split(maxsplit=1)
+                        if len(parts) == 2:
+                            cmd = parts[1]
+                            self.show_command_man(cmd)
+                        else:
+                            print(Fore.RED + "Usage: man <command>")
+
+                    elif command == "testdisk":
+                        self.run_testdisk()
+
+                    elif command == "photorec":
+                        self.run_photorec()
+
+                    elif command.startswith("save"):
+                        parts = command.split(maxsplit=1)
+                        if len(parts) == 2:
+                            directory = parts[1]
+                            self.save_recovery(directory)
+                        else:
+                            print(Fore.RED + "Usage: save <directory>")
+
+                    elif command == "--version":
+                        print(self.version)
+
+                    elif command == "--help":
+                        self.show_help()
+
+                    elif command == "exit":
+                        print(Fore.GREEN + "Exiting interactive mode.")
+                        break
+
+                    else:
+                        print(Fore.RED + "Invalid command. Type '--help' for a list of commands.")
+
+                except Exception as e:
+                    print(Fore.RED + f"An error occurred: {e}. Please try again or type '--help' for guidance.")
 
 
 
