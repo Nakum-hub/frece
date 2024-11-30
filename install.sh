@@ -7,6 +7,24 @@ TOOL_NAME="frece"
 SCRIPT_NAME="frece.py"
 VENV_DIR="$HOME/frece_venv"  # Virtual environment location
 
+# Update functionality
+if [ "$1" == "--update" ]; then
+    if [ -d "$INSTALL_DIR/$TOOL_NAME-repo" ]; then
+        echo "Updating the tool..."
+        cd "$INSTALL_DIR/$TOOL_NAME-repo"
+        sudo git pull || {
+            echo "Failed to pull updates. Please check your network connection."
+            exit 1
+        }
+        sudo cp "$INSTALL_DIR/$TOOL_NAME-repo/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
+        sudo chmod +x "$INSTALL_DIR/$TOOL_NAME"
+        echo "Tool updated successfully!"
+    else
+        echo "Installation directory not found. Please install the tool first."
+    fi
+    exit 0
+fi
+
 # Check if the tool already exists in the installation directory
 if [ -f "$INSTALL_DIR/$TOOL_NAME" ]; then
     echo "Tool already installed at $INSTALL_DIR/$TOOL_NAME"
