@@ -266,7 +266,7 @@ def interactive_mode(self):
 
 
 
-    def start(self):
+def start(self):
         """
         Entry point for the tool to process CLI arguments or launch interactive mode.
         """
