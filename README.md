@@ -50,6 +50,10 @@ source ~/frece_venv/bin/activate
 frece --version
 ```
 
+```bash
+example: source /root/frece_venv/bin/activate 
+```
+
 To get help on available commands, run:
 
 ```bash
