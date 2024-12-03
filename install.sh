@@ -60,7 +60,7 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Install required system packages (testdisk, photorec)
+# Install required recovery tools (testdisk, photorec)
 echo "Installing required recovery tools..."
 if ! command -v testdisk &> /dev/null || ! command -v photorec &> /dev/null; then
     if [ "$(uname)" == "Linux" ]; then
@@ -128,7 +128,7 @@ pip install --upgrade pip || {
     exit 1
 }
 pip install colorama || {
-    echo "Failed to install Python dependencies. Exiting installation."
+    echo "Failed to install Python dependencies (colorama). Exiting installation."
     deactivate
     exit 1
 }

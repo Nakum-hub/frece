@@ -1,41 +1,47 @@
-# FRECE: File Recovery Enhanced Command-line Environment (README)
+# **FRECE: File Recovery Tool **
 
-## Overview
-
-**FRECE** (File Recovery Enhanced Command-line Environment) is a powerful, Python-based tool for recovering lost files, integrating with tools like **TestDisk** and **PhotoRec**. Designed for use on **Kali Linux** and other Linux distributions, FRECE provides an interactive command-line interface with color-coded outputs and file system navigation via tab completion.
-
-The tool offers functionality for scanning directories, recovering files, running TestDisk/PhotoRec, and listing file types, all while providing helpful, dynamic banners for a friendly user experience.
+FRECE (File Recovery Enhanced Command-line Environment) is a powerful Python-based tool designed for file recovery. By integrating with tools like **TestDisk** and **PhotoRec**, it provides an interactive, color-coded CLI for recovering lost files and directories. This tool is specifically designed for **Kali Linux** and other Linux distributions, featuring tab-completion for navigation and command execution.
 
 ---
 
-## Features
+## **Overview**
+**FRECE** is a tool designed to make file recovery and data recovery tasks easy and efficient. The tool offers functionality for scanning directories, recovering files, running **TestDisk**/ **PhotoRec**, listing file types, and providing dynamic help in an interactive mode.
 
-- **File Recovery:** Recover files from specified directories.
+---
+
+## **Features**
+- **File Recovery:** Recover deleted or lost files from specified directories.
 - **Directory Scanning:** Scan directories for specific file types using extensions.
-- **Automated Tools:** Integrates with TestDisk and PhotoRec for advanced recovery.
-- **Tab Autocomplete:** Autocompletion of file paths and commands, similar to Kali Linux.
-- **Interactive Mode:** Engaging CLI with help and command manuals.
+- **Automated Tools:** Integrates with **TestDisk** and **PhotoRec** for advanced recovery.
+- **Tab Autocomplete:** Tab completion for file paths and commands, similar to Kali Linux.
+- **Interactive Mode:** CLI with command manuals and dynamic help.
+- **Color-coded Output:** Uses **Colorama** to add color to terminal outputs, enhancing user experience.
 
 ---
 
-## Prerequisites
-
+## **Prerequisites**
 Before installing FRECE, ensure your system meets the following requirements:
 
-1. **Kali Linux** or a Linux-based OS.
+1. **Kali Linux** or another Linux-based operating system.
 2. **Python 3.x** installed.
-3. **Git** installed for repository management.
-4. **TestDisk** and **PhotoRec** available (auto-installed during setup).
-5. **Colorama** Python library (installed automatically in a virtual environment).
+3. **Git** installed for cloning the repository.
+4. **TestDisk** and **PhotoRec** installed (these are auto-installed during setup).
+5. **Colorama** Python library (automatically installed in the virtual environment).
 
 ---
 
-## Installation Instructions
-
-The provided `install.sh` script automates the installation process. Follow the steps below:
+## **Installation Instructions**
+The provided `install.sh` script automates the entire installation process. Follow these steps:
 
 ### Step 1: Clone and Run the Installer
 
+First, clone the repository and change to the project directory:
+```bash
+git clone https://github.com/Nakum-hub/frece.git
+cd frece
+```
+
+Next, make the installation script executable and run it:
 ```bash
 chmod +x install.sh
 sudo ./install.sh
@@ -43,79 +49,78 @@ sudo ./install.sh
 
 ### Step 2: Verify Installation
 
-Once the installation is complete, activate the virtual environment and check the version:
-
+Once the installation is complete, activate the virtual environment and verify the installation:
 ```bash
 source ~/frece_venv/bin/activate
 frece --version
 ```
 
-```bash
-example: source /root/frece_venv/bin/activate 
-```
-
-To get help on available commands, run:
-
+To see a list of available commands, run:
 ```bash
 frece --help
 ```
 
 ---
 
-## Usage
+## **Usage**
 
-### Running FRECE
+FRECE can be run interactively or with command-line arguments.
 
-FRECE can be used interactively or with command-line arguments. Start the interactive mode by running:
-
+### Interactive Mode
+To start the interactive mode, simply type:
 ```bash
 frece
 ```
 
-You will see a banner and can enter commands such as `recover`, `scan`, `list`, etc.
+In this mode, you can execute commands such as:
+- `recover`
+- `scan`
+- `list`
+- `save`
+- `man`
+
+You will also see a dynamic banner and can navigate the filesystem easily using tab completion.
 
 ### Command Overview
 
 | Command                              | Description                                                 |
 |--------------------------------------|-------------------------------------------------------------|
 | `recover <source_dir> <target_dir>`  | Recover files from source to target directory.              |
-| `scan <directory> [extension]`       | Scan directory for files, filter by extension if specified. |
+| `scan <directory> [extension]`       | Scan directory for files and filter by extension if given.  |
 | `list <directory>`                   | List file types and their counts in the specified directory.|
 | `testdisk`                           | Run TestDisk for partition/file recovery.                   |
 | `photorec`                           | Run PhotoRec to recover files by signature.                 |
-| `save <directory>`                   | Save recovered files to a specified directory.              |
+| `save <directory>`                   | Save recovered files to the specified directory.            |
 | `man <command>`                      | Display manual for a specific command.                      |
 | `--version`                          | Display the tool version.                                   |
 | `--help`                             | Display available commands and usage.                       |
-| `exit`                               | Exit the interactive mode.                                  |
+| `exit`                               | Exit interactive mode.                                      |
 
 ---
 
-## Updating FRECE
-
-To update FRECE to the latest version:
-
+## **Updating FRECE**
+To update FRECE to the latest version, use the following command:
 ```bash
 sudo ./install.sh --update
 ```
-if any problem occured while updateing saying " To add an exception for this directory, call:
 
-        git config --global --add safe.directory /path/to/frece
-Failed to pull updates. Please check your network connection. " Then use the below command and then try to update it.
+If you encounter an issue with Git and receive the message:
+```
+To add an exception for this directory, call:
+    git config --global --add safe.directory /path/to/frece
+Failed to pull updates. Please check your network connection.
+```
+
+Resolve it by running:
 ```bash
-sudo git config --global --add safe.directory /path/to/frece./install.sh 
+sudo git config --global --add safe.directory /path/to/frece
 sudo ./install.sh --update
-``` 
-
-
-This will pull the latest changes from the repository and replace the existing script.
+```
 
 ---
 
-## Uninstallation
-
-To uninstall FRECE, remove the installed files and the virtual environment:
-
+## **Uninstallation**
+To uninstall FRECE and remove all installed files and the virtual environment:
 ```bash
 sudo rm /usr/local/bin/frece
 rm -rf ~/frece_venv
@@ -123,19 +128,21 @@ rm -rf ~/frece_venv
 
 ---
 
-## License and Contributions
-
-This project is open-source and contributions are welcome. If you encounter issues or have suggestions, feel free to open an issue on the [GitHub repository](https://github.com/Nakum-hub/frece).
-
----
-
-## Troubleshooting
-
-- **Permission Errors:** Ensure you run commands with `sudo` if necessary.
-- **Dependency Issues:** Verify that TestDisk, PhotoRec, and Python dependencies are installed correctly.
+## **Troubleshooting**
+- **Permission Errors:** Ensure you run commands with `sudo` where necessary.
+- **Dependency Issues:** Verify that **TestDisk**, **PhotoRec**, and **Python dependencies** are installed correctly.
 - **Git Issues:** Ensure you have network connectivity when using `--update`.
 
 ---
 
-### Author
+## **License and Contributions**
+This project is open-source and contributions are welcome! If you encounter issues or have suggestions, feel free to open an issue on the [GitHub repository](https://github.com/Nakum-hub/frece).
+
+---
+
+## **Author**
 Created by **Nakum-hub** for efficient and enhanced file recovery.
+
+---
+
+This updated README incorporates the features, installation instructions, commands, troubleshooting tips, and uninstallation details, making it a comprehensive guide for using and managing the FRECE tool.
