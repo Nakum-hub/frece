@@ -78,7 +78,7 @@ class FRECE:
         self.version = "FRECE v1.0"
         self.setup_tab_completion()
 
-        def scan_directory(self, directory, extension=None):
+    def scan_directory(self, directory, extension=None):
             """
             Scans the directory and returns a list of files, optionally filtering by extension.
             Supports shorthand paths like 'Trash'.
