@@ -309,7 +309,7 @@ class FRECE:
             self.slayer_tool = "Slayer"   # Placeholder name for PhotoRec
 
 
-    def run_testdisk(self):
+    def run_hunter(self):
         print(f"Running {self.hunter_tool}...")
         try:
             testdisk_path = self.get_installed_tool_path('testdisk') or '/usr/bin/testdisk'
@@ -323,7 +323,7 @@ class FRECE:
         except Exception as e:
             print(f"An unexpected error occurred while running {self.hunter_tool}: {e}")
 
-    def run_photorec(self):
+    def run_slayer(self):
         print(f"Running {self.slayer_tool}...")
         try:
             photorec_path = self.get_installed_tool_path('photorec') or '/usr/bin/photorec'
@@ -387,7 +387,7 @@ class FRECE:
         list_files_with_types <directory> - List detailed file types, file names, and directories in the specified directory.
         man <command>                     - Display manual for a specific command.
         hunter                            - Run hunter for data recovery, recovered files will be saved on the Desktop.
-        slayer                            - Run PhotoRec for data recovery, recovered files will be saved on the Desktop.
+        slayer                            - Run slayer for data recovery, recovered files will be saved on the Desktop.
         save <directory>                  - Save recovered files to a specified directory.
         --version                         - Show the tool version.
         --help                            - Display this help message.
