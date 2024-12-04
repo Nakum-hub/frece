@@ -11,6 +11,8 @@ except ImportError:
     import pyreadline as readline
 from pathlib import Path
 import subprocess
+import platform
+
 
 # Conditional import for Windows systems
 if sys.platform == "win32":
@@ -265,47 +267,55 @@ class FRECE:
         except Exception as e:
             print(Fore.RED + f"Error during recovery: {e}")
 
-        def run_testdisk(self):
+    def get_installed_tool_path(self, tool_name):
             """
-            Automates TestDisk recovery process for partition or file recovery.
+            Helper method to locate the tool's executable path using the 'which' command for Linux
+            or 'where' command for Windows.
+            Returns the path if found, else None.
             """
-            print("Running TestDisk...")
             try:
-                # Use the directory on Desktop (or another location) where recovered files are stored
-                recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-                if not os.path.exists(recovery_directory):
-                    os.makedirs(recovery_directory)
-                    print(f"Created recovery directory: {recovery_directory}")
-                
-                # Run TestDisk using subprocess
-                subprocess.run(["testdisk", "/d", recovery_directory], check=True)
-                print(f"TestDisk completed. Results saved in: {recovery_directory}")
-            
-            except subprocess.CalledProcessError as e:
-                print(f"TestDisk error: {e}")
+                if platform.system() == 'Linux':  # For Linux
+                    result = subprocess.run(['which', tool_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                elif platform.system() == 'Windows':  # For Windows
+                    result = subprocess.run(['where', tool_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                else:
+                    raise Exception("Unsupported OS")
+
+                tool_path = result.stdout.decode('utf-8').strip()
+                return tool_path if tool_path else None
+            except subprocess.CalledProcessError:
+                return None
+
+    def run_testdisk(self):
+        print("Running TestDisk...")
+        try:
+            # Explicitly specifying the full path for testdisk
+            testdisk_path = self.get_installed_tool_path('testdisk') or '/usr/bin/testdisk'
+            subprocess.run([testdisk_path, "/log", "/d", RECOVERY_DIR], check=True)
+            print(f"TestDisk completed. Results saved in: {RECOVERY_DIR}")
+
+        except FileNotFoundError as e:
+            print(f"Error: {e}")
+        except subprocess.CalledProcessError as e:
+            print(f"TestDisk error: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred while running TestDisk: {e}")
 
     def run_photorec(self):
-        """
-        Automates PhotoRec recovery process to retrieve lost files by file signatures.
-        """
         print("Running PhotoRec...")
         try:
-            # Use the directory in Desktop (or another location) where recovered files are stored
-            recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-            
-            # Create the recovery directory if it doesn't exist
-            if not os.path.exists(recovery_directory):
-                os.makedirs(recovery_directory)
-                print(f"Created recovery directory: {recovery_directory}")
-            
-            # Run PhotoRec using subprocess
-            subprocess.run(["photorec", "/d", recovery_directory], check=True)
-            print(f"PhotoRec completed. Results saved in: {recovery_directory}")
-        
+            # Explicitly specifying the full path for photorec
+            photorec_path = self.get_installed_tool_path('photorec') or '/usr/bin/photorec'
+            subprocess.run([photorec_path, "/d", RECOVERY_DIR], check=True)
+            print(f"PhotoRec completed. Results saved in: {RECOVERY_DIR}")
+
+        except FileNotFoundError as e:
+            print(f"Error: {e}")
         except subprocess.CalledProcessError as e:
             print(f"PhotoRec error: {e}")
         except Exception as e:
-            print(f"An error occurred while running PhotoRec: {e}")
+            print(f"An unexpected error occurred while running PhotoRec: {e}")
+
 
     def save_recovery(self, directory=None):
         """
@@ -500,31 +510,65 @@ class FRECE:
                         print(Fore.RED + "Usage: man <command>")
 
 
-                elif command == "testdisk":
-                        try:
-                            # Ensure the recovered files from testdisk go to the Desktop folder
-                            recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-                            if not os.path.exists(recovery_directory):
-                                os.makedirs(recovery_directory)
-                                print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
-                            self.run_testdisk(recovery_directory)  # Pass the recovery directory to the method
-                        except AttributeError as e:
-                            print(Fore.RED + f"An error occurred: {e}. Ensure 'run_testdisk' is implemented and accessible.")
-                        except Exception as e:
-                            print(Fore.RED + f"An unexpected error occurred while running TestDisk: {e}")
+                elif command == 'testdisk':
+                    try:
+                        # Define recovery directory
+                        recovery_directory = os.path.abspath(os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files"))
+                        if not os.path.exists(recovery_directory):
+                            os.makedirs(recovery_directory)
+                            print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
+                        else:
+                            print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
+
+                        # Debugging information
+                        print(f"Debug: Running TestDisk with recovery directory: {recovery_directory}")
+
+                        # Run TestDisk with sudo
+                        subprocess.run(["sudo", "/usr/bin/testdisk", "/log"], cwd=recovery_directory, check=True)
+                        print(Fore.GREEN + "TestDisk completed successfully!")
+                    except FileNotFoundError:
+                        print(Fore.RED + "TestDisk executable not found. Ensure it is correctly installed and accessible.")
+                    except subprocess.CalledProcessError as cpe:
+                        print(Fore.RED + f"TestDisk encountered an error: {cpe}")
+                    except PermissionError:
+                        print(Fore.RED + "Permission denied while accessing the recovery directory.")
+                    except Exception as e:
+                        print(Fore.RED + f"An unexpected error occurred: {e}")
+
 
                 elif command == "photorec":
-                        try:
-                            # Ensure the recovered files from photorec go to the Desktop folder
-                            recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-                            if not os.path.exists(recovery_directory):
-                                os.makedirs(recovery_directory)
-                                print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
-                            self.run_photorec(recovery_directory)  # Pass the recovery directory to the method
-                        except AttributeError as e:
-                            print(Fore.RED + f"An error occurred: {e}. Ensure 'run_photorec' is implemented and accessible.")
-                        except Exception as e:
-                            print(Fore.RED + f"An unexpected error occurred while running PhotoRec: {e}")
+                    try:
+                        # Define the recovery directory path
+                        recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                        
+                        # Ensure the recovery directory exists
+                        if not os.path.exists(recovery_directory):
+                            os.makedirs(recovery_directory)
+                            print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
+                        else:
+                            print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
+
+                        # Run PhotoRec
+                        print(Fore.CYAN + "Launching PhotoRec...")
+                        photorec_path = "/usr/bin/photorec"  # Adjust if PhotoRec is installed in a different location
+                        
+                        # Verify if PhotoRec exists and is executable
+                        if not os.path.isfile(photorec_path) or not os.access(photorec_path, os.X_OK):
+                            raise FileNotFoundError("PhotoRec executable not found or is not executable.")
+
+                        # Execute PhotoRec with the recovery directory as the output directory
+                        subprocess.run([photorec_path], cwd=recovery_directory, check=True)
+                        print(Fore.GREEN + "PhotoRec completed successfully!")
+
+                    except FileNotFoundError as e:
+                        print(Fore.RED + f"PhotoRec not found: {e}. Please ensure it is correctly installed.")
+                    except subprocess.CalledProcessError as cpe:
+                        print(Fore.RED + f"PhotoRec encountered an error while executing: {cpe}")
+                    except PermissionError:
+                        print(Fore.RED + "Permission denied while accessing the recovery directory. "
+                                        "Ensure you have the required permissions.")
+                    except Exception as e:
+                        print(Fore.RED + f"An unexpected error occurred while running PhotoRec: {e}")
 
 
                 elif command.startswith("save"):
@@ -645,29 +689,80 @@ class FRECE:
 
                     elif command == 'testdisk':
                         try:
-                            # Ensure the recovered files go to the Desktop's Recovered_Files directory
+                            # Define the recovery directory path
                             recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+
+                            # Ensure the recovery directory exists
                             if not os.path.exists(recovery_directory):
                                 os.makedirs(recovery_directory)
                                 print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
-                            self.run_testdisk(recovery_directory)  # Pass the recovery directory to the method
-                        except AttributeError as e:
-                            print(Fore.RED + f"An error occurred: {e}. Ensure 'run_testdisk' is implemented and accessible.")
+                            else:
+                                print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
+
+                            # Debugging info
+                            print(f"Debug: Checking TestDisk executable and privileges...")
+
+                            # Validate the TestDisk executable
+                            testdisk_path = "/usr/bin/testdisk"
+                            if not os.path.isfile(testdisk_path) or not os.access(testdisk_path, os.X_OK):
+                                raise FileNotFoundError("TestDisk executable not found or is not executable.")
+
+                            # Check if the script has root privileges
+                            if os.geteuid() != 0:
+                                print(Fore.RED + "TestDisk requires root privileges to run. Please re-run the script with 'sudo'.")
+                                return
+
+                            # Run the TestDisk process with sudo
+                            print(Fore.CYAN + "Launching TestDisk with elevated privileges...")
+                            subprocess.run(["sudo", testdisk_path, "/log"], cwd=recovery_directory, check=True)
+                            print(Fore.GREEN + "TestDisk completed successfully!")
+
+                        except FileNotFoundError:
+                            print(Fore.RED + "TestDisk executable not found. Please ensure TestDisk is installed and accessible. "
+                                            "You can install it using: 'sudo apt install testdisk'")
+                        except subprocess.CalledProcessError as cpe:
+                            print(Fore.RED + f"TestDisk encountered an error while executing: {cpe}")
+                        except PermissionError:
+                            print(Fore.RED + "Permission denied while accessing the recovery directory. "
+                                            "Ensure you have the required permissions.")
                         except Exception as e:
                             print(Fore.RED + f"An unexpected error occurred while running TestDisk: {e}")
 
                     elif command == 'photorec':
                         try:
-                            # Ensure the recovered files go to the Desktop's Recovered_Files directory
+                            # Define the recovery directory path
                             recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                            
+                            # Ensure the recovery directory exists
                             if not os.path.exists(recovery_directory):
                                 os.makedirs(recovery_directory)
                                 print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
-                            self.run_photorec(recovery_directory)  # Pass the recovery directory to the method
-                        except AttributeError as e:
-                            print(Fore.RED + f"An error occurred: {e}. Ensure 'run_photorec' is implemented and accessible.")
+                            else:
+                                print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
+
+                            # Run PhotoRec
+                            print(Fore.CYAN + "Launching PhotoRec...")
+                            
+                            # Validate the PhotoRec executable
+                            photorec_path = "/usr/bin/photorec"
+                            if not os.path.isfile(photorec_path) or not os.access(photorec_path, os.X_OK):
+                                raise FileNotFoundError("PhotoRec executable not found or is not executable.")
+                            
+                            # Run the PhotoRec process
+                            subprocess.run([photorec_path], cwd=recovery_directory, check=True)
+                            print(Fore.GREEN + "PhotoRec completed successfully!")
+
+                        except FileNotFoundError:
+                            print(Fore.RED + "PhotoRec executable not found. Please ensure PhotoRec is installed and accessible. "
+                                            "You can install it using: 'sudo apt install testdisk'")
+                        except subprocess.CalledProcessError as cpe:
+                            print(Fore.RED + f"PhotoRec encountered an error while executing: {cpe}")
+                        except PermissionError:
+                            print(Fore.RED + "Permission denied while accessing the recovery directory. "
+                                            "Ensure you have the required permissions.")
                         except Exception as e:
                             print(Fore.RED + f"An unexpected error occurred while running PhotoRec: {e}")
+
 
 
                     elif command == 'save':
