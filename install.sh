@@ -78,6 +78,28 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
+# Additional update functionality for frece tool
+
+if [ "$1" == "update" ] && [ "$2" == "$TOOL_NAME" ]; then
+    if [ -d "$REPO_DIR" ]; then
+        echo "Updating frece tool..."
+        cd "$REPO_DIR"
+
+        git pull || {
+            echo "Failed to pull updates for frece. Please check your network connection."
+            exit 1
+        }
+
+        cp "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
+        chmod +x "$INSTALL_DIR/$TOOL_NAME"
+        echo "frece tool updated successfully!"
+    else
+        echo "Installation directory not found. Please install the tool first."
+    fi
+
+    exit 0
+fi
+
 # Install required recovery tools (TestDisk and PhotoRec)
 
 echo "Installing required recovery tools..."
@@ -140,7 +162,7 @@ echo "Python environment is set up and ready."
 
 deactivate
 
-# Create a Python virtual environment if it doesn't exist
+# Create a Python virtual environment
 
 if [ ! -d "$VENV_DIR" ]; then
     echo "Creating a Python virtual environment..."
