@@ -271,13 +271,16 @@ class FRECE:
             """
             print("Running TestDisk...")
             try:
-                # Use the directory in Desktop (or another location) where recovered files are stored
+                # Use the directory on Desktop (or another location) where recovered files are stored
                 recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
                 if not os.path.exists(recovery_directory):
                     os.makedirs(recovery_directory)
-
+                    print(f"Created recovery directory: {recovery_directory}")
+                
+                # Run TestDisk using subprocess
                 subprocess.run(["testdisk", "/d", recovery_directory], check=True)
                 print(f"TestDisk completed. Results saved in: {recovery_directory}")
+            
             except subprocess.CalledProcessError as e:
                 print(f"TestDisk error: {e}")
 
@@ -289,13 +292,20 @@ class FRECE:
         try:
             # Use the directory in Desktop (or another location) where recovered files are stored
             recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+            
+            # Create the recovery directory if it doesn't exist
             if not os.path.exists(recovery_directory):
                 os.makedirs(recovery_directory)
-
+                print(f"Created recovery directory: {recovery_directory}")
+            
+            # Run PhotoRec using subprocess
             subprocess.run(["photorec", "/d", recovery_directory], check=True)
             print(f"PhotoRec completed. Results saved in: {recovery_directory}")
+        
         except subprocess.CalledProcessError as e:
             print(f"PhotoRec error: {e}")
+        except Exception as e:
+            print(f"An error occurred while running PhotoRec: {e}")
 
     def save_recovery(self, directory=None):
         """
@@ -491,18 +501,31 @@ class FRECE:
 
 
                 elif command == "testdisk":
-                    # Ensure the recovered files from testdisk go to the Desktop folder
-                    recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-                    if not os.path.exists(recovery_directory):
-                        os.makedirs(recovery_directory)
-                    self.run_testdisk(recovery_directory)  # Pass the recovery directory to the method
+                        try:
+                            # Ensure the recovered files from testdisk go to the Desktop folder
+                            recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                            if not os.path.exists(recovery_directory):
+                                os.makedirs(recovery_directory)
+                                print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
+                            self.run_testdisk(recovery_directory)  # Pass the recovery directory to the method
+                        except AttributeError as e:
+                            print(Fore.RED + f"An error occurred: {e}. Ensure 'run_testdisk' is implemented and accessible.")
+                        except Exception as e:
+                            print(Fore.RED + f"An unexpected error occurred while running TestDisk: {e}")
 
                 elif command == "photorec":
-                    # Ensure the recovered files from photorec go to the Desktop folder
-                    recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-                    if not os.path.exists(recovery_directory):
-                        os.makedirs(recovery_directory)
-                    self.run_photorec(recovery_directory)  # Pass the recovery directory to the method
+                        try:
+                            # Ensure the recovered files from photorec go to the Desktop folder
+                            recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                            if not os.path.exists(recovery_directory):
+                                os.makedirs(recovery_directory)
+                                print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
+                            self.run_photorec(recovery_directory)  # Pass the recovery directory to the method
+                        except AttributeError as e:
+                            print(Fore.RED + f"An error occurred: {e}. Ensure 'run_photorec' is implemented and accessible.")
+                        except Exception as e:
+                            print(Fore.RED + f"An unexpected error occurred while running PhotoRec: {e}")
+
 
                 elif command.startswith("save"):
                     parts = command.split(maxsplit=1)
@@ -621,18 +644,31 @@ class FRECE:
                                 self.show_command_man(args[1])  # Show manual for specific command
 
                     elif command == 'testdisk':
-                        # Ensure the recovered files go to the Desktop's Recovered_Files directory
-                        recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-                        if not os.path.exists(recovery_directory):
-                            os.makedirs(recovery_directory)
-                        self.run_testdisk(recovery_directory)
+                        try:
+                            # Ensure the recovered files go to the Desktop's Recovered_Files directory
+                            recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                            if not os.path.exists(recovery_directory):
+                                os.makedirs(recovery_directory)
+                                print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
+                            self.run_testdisk(recovery_directory)  # Pass the recovery directory to the method
+                        except AttributeError as e:
+                            print(Fore.RED + f"An error occurred: {e}. Ensure 'run_testdisk' is implemented and accessible.")
+                        except Exception as e:
+                            print(Fore.RED + f"An unexpected error occurred while running TestDisk: {e}")
 
                     elif command == 'photorec':
-                        # Ensure the recovered files go to the Desktop's Recovered_Files directory
-                        recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-                        if not os.path.exists(recovery_directory):
-                            os.makedirs(recovery_directory)
-                        self.run_photorec(recovery_directory)
+                        try:
+                            # Ensure the recovered files go to the Desktop's Recovered_Files directory
+                            recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                            if not os.path.exists(recovery_directory):
+                                os.makedirs(recovery_directory)
+                                print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
+                            self.run_photorec(recovery_directory)  # Pass the recovery directory to the method
+                        except AttributeError as e:
+                            print(Fore.RED + f"An error occurred: {e}. Ensure 'run_photorec' is implemented and accessible.")
+                        except Exception as e:
+                            print(Fore.RED + f"An unexpected error occurred while running PhotoRec: {e}")
+
 
                     elif command == 'save':
                         if len(args) < 2:
