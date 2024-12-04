@@ -207,8 +207,6 @@ class FRECE:
             target_dir (str): Path to the target directory.
             extension (str, optional): File extension to filter files. Recovers all files if not specified.
         """
-
-
         try:
             print(Fore.GREEN + f"Starting recovery from {source_dir} to {target_dir}...")
 
@@ -267,22 +265,21 @@ class FRECE:
         except Exception as e:
             print(Fore.RED + f"Error during recovery: {e}")
 
+        def run_testdisk(self):
+            """
+            Automates TestDisk recovery process for partition or file recovery.
+            """
+            print("Running TestDisk...")
+            try:
+                # Use the directory in Desktop (or another location) where recovered files are stored
+                recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                if not os.path.exists(recovery_directory):
+                    os.makedirs(recovery_directory)
 
-    def run_testdisk(self):
-        """
-        Automates TestDisk recovery process for partition or file recovery.
-        """
-        print("Running TestDisk...")
-        try:
-            # Use the directory in Desktop (or another location) where recovered files are stored
-            recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-            if not os.path.exists(recovery_directory):
-                os.makedirs(recovery_directory)
-
-            subprocess.run(["testdisk", "/d", recovery_directory], check=True)
-            print(f"TestDisk completed. Results saved in: {recovery_directory}")
-        except subprocess.CalledProcessError as e:
-            print(f"TestDisk error: {e}")
+                subprocess.run(["testdisk", "/d", recovery_directory], check=True)
+                print(f"TestDisk completed. Results saved in: {recovery_directory}")
+            except subprocess.CalledProcessError as e:
+                print(f"TestDisk error: {e}")
 
     def run_photorec(self):
         """
@@ -320,17 +317,24 @@ class FRECE:
 
             print(Fore.GREEN + f"Saving recovered files to {directory}...")
 
-            # Copy files from the RECOVERY_DIR to the specified directory
+            # Check if the recovery directory exists and has files to save
             if os.path.exists(RECOVERY_DIR) and os.listdir(RECOVERY_DIR):
+                # Copy files from the RECOVERY_DIR to the specified directory
                 for file in os.listdir(RECOVERY_DIR):
-                    shutil.copy(os.path.join(RECOVERY_DIR, file), directory)
+                    source_file = os.path.join(RECOVERY_DIR, file)
+                    destination_file = os.path.join(directory, file)
+
+                    # Ensure the destination directory exists before copying
+                    os.makedirs(os.path.dirname(destination_file), exist_ok=True)
+                    shutil.copy(source_file, destination_file)
+                    print(Fore.GREEN + f"Recovered file saved: {destination_file}")
+
                 print(Fore.GREEN + f"Files saved successfully to {directory}.")
             else:
                 print(Fore.YELLOW + "No files found in the recovery directory to save.")
 
         except Exception as e:
             print(Fore.RED + f"Error saving files: {e}")
-
 
     def show_help(self):
         """
@@ -420,12 +424,34 @@ class FRECE:
                     command_parts = command.split()
                     if len(command_parts) == 3:  # source, target
                         _, source, target = command_parts
-                        print(Fore.GREEN + f"Recovering all files and directories from {source} to {target}...")
-                        self.recover_files(source, target)  # Recover both files and directories
+                        
+                        # Validate source and target directories
+                        if not os.path.exists(source):
+                            print(Fore.RED + f"Source directory {source} does not exist.")
+                        elif not os.path.exists(target):
+                            print(Fore.RED + f"Target directory {target} does not exist. Creating it now.")
+                            os.makedirs(target, exist_ok=True)
+                            print(Fore.GREEN + f"Created target directory: {target}")
+                        
+                        else:
+                            print(Fore.GREEN + f"Recovering all files and directories from {source} to {target}...")
+                            self.recover_files(source, target)  # Recover both files and directories
+
                     elif len(command_parts) == 4:  # source, extension, target
                         _, source, extension, target = command_parts
-                        print(Fore.GREEN + f"Recovering files with extension {extension} from {source} to {target}...")
-                        self.recover_files(source, target, extension)  # Recover files with a specified extension
+                        
+                        # Validate source and target directories
+                        if not os.path.exists(source):
+                            print(Fore.RED + f"Source directory {source} does not exist.")
+                        elif not os.path.exists(target):
+                            print(Fore.RED + f"Target directory {target} does not exist. Creating it now.")
+                            os.makedirs(target, exist_ok=True)
+                            print(Fore.GREEN + f"Created target directory: {target}")
+                        
+                        else:
+                            print(Fore.GREEN + f"Recovering files with extension {extension} from {source} to {target}...")
+                            self.recover_files(source, target, extension)  # Recover files with a specified extension
+
                     else:
                         print(Fore.RED + "Invalid number of arguments. Usage: recover <source_dir> [extension] <target_dir>")
 
@@ -527,13 +553,33 @@ class FRECE:
                             target = args[2]
                             extension = args[3] if len(args) > 3 else None
 
+                            # Validate source directory existence
                             if not os.path.exists(source):
                                 print(Fore.RED + f"Source directory '{source}' does not exist.")
                             elif not os.path.exists(target):
+                                # If target directory doesn't exist, create it
                                 print(Fore.RED + f"Target directory '{target}' does not exist. Creating target directory.")
-                                os.makedirs(target)  # Create target directory if it doesn't exist
+                                os.makedirs(target, exist_ok=True)  # Create the target directory if it doesn't exist
+                                print(Fore.GREEN + f"Created target directory: {target}")
                             else:
+                                # Inform the user of the recovery operation
+                                if extension:
+                                    print(Fore.GREEN + f"Recovering files with extension '{extension}' from {source} to {target}...")
+                                else:
+                                    print(Fore.GREEN + f"Recovering all files and directories from {source} to {target}...")
+
+                                # Call the recovery method
                                 self.recover_files(source, target, extension)
+
+                                # Check if any files were recovered (for feedback)
+                                if extension:
+                                    # If extension is specified, check for matching files
+                                    files_recovered = [file for file in os.listdir(source) if file.endswith(extension)]
+                                    if not files_recovered:
+                                        print(Fore.YELLOW + f"No files with extension '{extension}' found in {source}.")
+                                else:
+                                    # If no extension is specified, simply inform the user about the recovery
+                                    print(Fore.GREEN + f"Recovery from {source} to {target} completed.")
 
                     elif command == 'scan':
                         if len(args) < 2:
@@ -593,21 +639,35 @@ class FRECE:
                             print(Fore.RED + "Usage: save <directory>")
                         else:
                             directory = args[1]
+                            
+                            # Check if the directory exists
                             if not os.path.exists(directory):
                                 print(Fore.RED + f"Directory '{directory}' does not exist. Creating directory.")
-                                os.makedirs(directory)  # Create directory if it doesn't exist
+                                os.makedirs(directory, exist_ok=True)  # Create the directory if it doesn't exist
+                                print(Fore.GREEN + f"Created directory: {directory}")
                             else:
+                                print(Fore.GREEN + f"Using existing directory: {directory}")
+                            
+                            # Attempt to save recovered files to the directory
+                            try:
                                 self.save_recovery(directory)
+                                print(Fore.GREEN + f"Files saved successfully to {directory}.")
+                            except Exception as e:
+                                print(Fore.RED + f"Error saving files: {e}")
 
                     else:
                         print(Fore.RED + "Invalid command. Type '--help' for usage.")
-                else:
-                    # Display dynamic banner and enter interactive mode if no arguments are provided
-                    display_dynamic_banner()
-                    self.interactive_mode()
 
+                    # Handle case when no arguments are provided
+                else:
+                        # Display dynamic banner and enter interactive mode if no arguments are provided
+                        display_dynamic_banner()
+                        self.interactive_mode()
+
+                    # Handle any general exceptions
             except Exception as e:
                 print(Fore.RED + f"An error occurred: {e}")
+
 
 
 # ================== Execution ==================
