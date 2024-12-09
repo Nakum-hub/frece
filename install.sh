@@ -95,6 +95,10 @@ if [ "$1" == "update" ] && [ "$2" == "$TOOL_NAME" ]; then
         echo "Updating frece tool..."
         cd "$REPO_DIR"
 
+# Attempt to stash changes if there are any
+git stash save "Temporary stash before pulling updates"
+
+
         git pull || {
             echo "Failed to pull updates for frece. Please check your network connection."
             exit 1
