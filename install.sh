@@ -34,6 +34,7 @@ create_directories() {
 
 # Install or update functionality
 
+
 if [ "$1" == "--update" ]; then
     create_directories  # Ensure the directories are created if updating
 
@@ -42,16 +43,15 @@ if [ "$1" == "--update" ]; then
         echo "Updating the tool..."
         cd "$REPO_DIR"
 
+        # Pull the latest changes from the repository
         git pull || {
             echo "Failed to pull updates. Please check your network connection."
             exit 1
         }
 
-        cp "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
-        chmod +x "$INSTALL_DIR/$TOOL_NAME"
         echo "Tool updated successfully!"
     else
-        echo "Installation directory not found. Please install the tool first."
+        echo "Tool not installed. Please install it first."
     fi
 
     exit 0

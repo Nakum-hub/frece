@@ -79,51 +79,66 @@ class FRECE:
     def __init__(self):
         self.version = "FRECE v1.0"
         self.setup_tab_completion()
+        # Set the path where the repo will be located on the Desktop
+        self.REPO_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "frece_repo")
 
     def scan_directory(self, directory, extension=None):
-            """
-            Scans the directory and returns a list of files, optionally filtering by extension.
-            Supports shorthand paths like 'Trash'.
-            """
-            # Ensure directory is a string before calling lower()
-            if not isinstance(directory, str):
-                print(Fore.RED + "Invalid directory path. It must be a string.")
+        """
+        Scans the directory and returns a list of files, optionally filtering by extension.
+        Supports shorthand paths like 'Trash', 'Desktop', 'Documents', etc.
+        """
+
+        # Define common shorthand directories
+        shorthand_paths = {
+            "trash": os.path.expanduser("~/.local/share/Trash/files"),  # For Linux
+            "desktop": os.path.join(os.path.expanduser("~"), "Desktop"),
+            "documents": os.path.join(os.path.expanduser("~"), "Documents"),
+            "downloads": os.path.join(os.path.expanduser("~"), "Downloads"),
+            "pictures": os.path.join(os.path.expanduser("~"), "Pictures"),
+            "music": os.path.join(os.path.expanduser("~"), "Music"),
+            "videos": os.path.join(os.path.expanduser("~"), "Videos"),
+        }
+
+        # Ensure directory is a string before calling lower()
+        if not isinstance(directory, str):
+            print(Fore.RED + "Invalid directory path. It must be a string.")
+            return []
+
+        # Expand shorthand paths
+        lower_directory = directory.lower()
+        if lower_directory in shorthand_paths:
+            directory = shorthand_paths[lower_directory]
+            if not os.path.exists(directory):
+                print(Fore.RED + f"{directory} is not accessible on this system.")
                 return []
 
-            # Expand shorthand paths
-            if directory.lower() == "trash":
-                directory = os.path.expanduser("~/.local/share/Trash/files")  # For Linux
-                if not os.path.exists(directory):  # Fallback for other OS
-                    print(Fore.RED + "Trash directory is not accessible on this system.")
-                    return []
-            else:
-                directory = os.path.expanduser(directory)
-                directory = os.path.abspath(directory)
+        else:
+            directory = os.path.expanduser(directory)
+            directory = os.path.abspath(directory)
 
-            try:
-                if not os.path.exists(directory):
-                    print(Fore.RED + f"Directory {directory} does not exist.")
-                    return []
+        try:
+            if not os.path.exists(directory):
+                print(Fore.RED + f"Directory {directory} does not exist.")
+                return []
 
-                if extension and not extension.startswith("."):
-                    extension = f".{extension}"  # Automatically prepend the dot
+            if extension and not extension.startswith("."):
+                extension = f".{extension}"  # Automatically prepend the dot
 
-                files = [file for file in Path(directory).rglob('*') if file.is_file()]
+            files = [file for file in Path(directory).rglob('*') if file.is_file()]
+            if extension:
+                files = [file for file in files if file.suffix.lower() == extension.lower()]
+
+            if files:
+                print(Fore.GREEN + f"Scanned {directory} and found {len(files)} files.")
                 if extension:
-                    files = [file for file in files if file.suffix.lower() == extension.lower()]
+                    print(Fore.GREEN + f"Filtered by extension: {extension}")
+            else:
+                print(Fore.YELLOW + f"No files found in {directory}.")
 
-                if files:
-                    print(Fore.GREEN + f"Scanned {directory} and found {len(files)} files.")
-                    if extension:
-                        print(Fore.GREEN + f"Filtered by extension: {extension}")
-                else:
-                    print(Fore.YELLOW + f"No files found in {directory}.")
-
-                return files
-            except PermissionError:
-                print(Fore.RED + "Permission denied while accessing the directory.")
-                return []
-
+            return files
+        except PermissionError:
+            print(Fore.RED + "Permission denied while accessing the directory.")
+            return []
 
 
 
@@ -329,6 +344,27 @@ class FRECE:
         except Exception as e:
             print(Fore.RED + f"An unexpected error occurred while running {self.slayer_tool}: {e}")
 
+    def create_directories(self):
+        # Ensure that the REPO_DIR exists
+        if not os.path.exists(self.REPO_DIR):
+            print(Fore.GREEN + "Creating the REPO_DIR directory...")
+            os.makedirs(self.REPO_DIR, exist_ok=True)
+
+
+    def update_tool(self):
+        try:
+            self.create_directories()  # Ensure REPO_DIR exists
+
+            # Update repository if it exists
+            if os.path.exists(self.REPO_DIR):
+                print(Fore.GREEN + "Updating the tool...")
+                os.chdir(self.REPO_DIR)
+                subprocess.run(["git", "pull"], check=True)
+                print(Fore.GREEN + "Tool updated successfully!")
+            else:
+                print(Fore.RED + "Tool not installed. Please install it first.")
+        except Exception as e:
+            print(Fore.RED + f"An error occurred during update: {e}")
 
 
     def save_recovery(self, directory=None):
@@ -380,6 +416,7 @@ class FRECE:
         list <directory>                  - List file types and their counts in the specified directory.
         list_files_with_types <directory> - List detailed file types, file names, and directories in the specified directory.
         man <command>                     - Display manual for a specific command.
+        update                            - Update the FRECE tool to the latest version.
         hunter                            - Run hunter for data recovery, recovered files will be saved on the Desktop.
         slayer                            - Run slayer for data recovery, recovered files will be saved on the Desktop.
         save <directory>                  - Save recovered files to a specified directory.
@@ -398,6 +435,7 @@ class FRECE:
         - list_files_with_types /path/to/directory
         - hunter
         - slayer
+        - update
         - save /path/to/save/directory""")
 
     def show_command_man(self, command):
@@ -413,6 +451,7 @@ class FRECE:
             'list_files_with_types': ("List detailed file types, file names, and directories in the specified directory.\n"
                                     "Usage: list_files_with_types <directory>\n"
                                     "Example: list_files_with_types ~/Documents"),
+            'update': "Update the FRECE tool to the latest version",
             'hunter': "Run hunter to recover partitions and files.\nUsage: hunter",
             'slayer': "Run slayer to recover lost files by file signatures.\nUsage: slayer",
             'save': "Save recovered files to the specified directory.\nUsage: save <directory>",
@@ -490,16 +529,21 @@ class FRECE:
                         print(Fore.RED + "Invalid number of arguments. Usage: recover <source_dir> [extension] <target_dir>")
 
                 elif command.startswith("scan"):
-                    parts = command.split(maxsplit=2)
-                    if len(parts) >= 2:
-                        directory = parts[1]
-                        ext = parts[2] if len(parts) == 3 else None
-                        files = self.scan_directory(directory, ext)
-                        print(Fore.GREEN + f"Found {len(files)} files in {directory}.")
-                        if ext:
-                            print(Fore.GREEN + f"Files filtered by extension: {ext}")
-                    else:
-                        print(Fore.RED + "Usage: scan <directory> [extension]")
+                        parts = command.split(maxsplit=2)
+
+                        if len(parts) >= 2:
+                            directory = parts[1]
+                            ext = parts[2] if len(parts) == 3 else None
+                            files = self.scan_directory(directory, ext)
+                        if files is not None:  # Check if files is returned correctly
+                            print(Fore.GREEN + f"Found {len(files)} files in {directory}.")
+                            if ext:
+                                print(Fore.GREEN + f"Files filtered by extension: {ext}")
+                            else:
+                                print(Fore.RED + "Usage: scan <directory> [extension]")
+                
+                elif command.startswith("update"):
+                    self.update_tool()  # Calls the update method
 
                 elif command.startswith("list"):
                     parts = command.split(maxsplit=1)
@@ -670,15 +714,17 @@ class FRECE:
                             directory = args[1]
                             extension = args[2] if len(args) > 2 else None
 
-                            if not os.path.exists(directory):
-                                print(Fore.RED + f"Directory '{directory}' does not exist.")
-                            else:
-                                files = self.scan_directory(directory, extension)
+                            # No need to check if directory exists since scan_directory handles it
+                            files = self.scan_directory(directory, extension)
+                            if files is not None:  # Check if files is returned correctly
                                 print(Fore.GREEN + f"Found {len(files)} files in '{directory}'.")
                                 if extension:
                                     print(Fore.GREEN + f"Filtered by extension: {extension}")
 
 
+                    elif '--update' in args:
+                        self.update_tool()  # Method to handle updates
+        
                     elif command == 'list':
                         if len(args) < 2:
                             print(Fore.RED + "Usage: list <directory>")
@@ -802,6 +848,7 @@ class FRECE:
 
                     else:
                         print(Fore.RED + "Invalid command. Type '--help' for usage.")
+                        return
 
                     # Handle case when no arguments are provided
                 else:
@@ -820,3 +867,4 @@ class FRECE:
 if __name__ == "__main__":
     tool = FRECE()  # Instantiate the FRECE class
     tool.start()    # Call the start method
+    tool.update_tool()  # Call update_tool to test functionality
