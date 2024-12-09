@@ -286,35 +286,49 @@ class FRECE:
             except subprocess.CalledProcessError:
                 return None
 
-    def run_testdisk(self):
-        print("Running TestDisk...")
+    def run_hunter(self):  # Renamed method for TestDisk
+        print(f"Running {self.hunter_tool}...")
         try:
-            # Explicitly specifying the full path for testdisk
-            testdisk_path = self.get_installed_tool_path('testdisk') or '/usr/bin/testdisk'
-            subprocess.run([testdisk_path, "/log", "/d", RECOVERY_DIR], check=True)
-            print(f"TestDisk completed. Results saved in: {RECOVERY_DIR}")
+            # Ensure the recovery directory exists
+            if not os.path.exists(self.recovery_directory):
+                os.makedirs(self.recovery_directory)
+                print(Fore.GREEN + f"Created recovery directory: {self.recovery_directory}")
 
-        except FileNotFoundError as e:
-            print(f"Error: {e}")
-        except subprocess.CalledProcessError as e:
-            print(f"TestDisk error: {e}")
+            # Run the tool with sudo
+            subprocess.run(["sudo", "/usr/bin/testdisk", "/log"], cwd=self.recovery_directory, check=True)
+            print(Fore.GREEN + f"{self.hunter_tool} completed successfully!")
+
+        except FileNotFoundError:
+            print(Fore.RED + f"{self.hunter_tool} executable not found. Ensure it is correctly installed and accessible.")
+        except subprocess.CalledProcessError as cpe:
+            print(Fore.RED + f"{self.hunter_tool} encountered an error: {cpe}")
+        except PermissionError:
+            print(Fore.RED + "Permission denied while accessing the recovery directory.")
         except Exception as e:
-            print(f"An unexpected error occurred while running TestDisk: {e}")
+            print(Fore.RED + f"An unexpected error occurred while running {self.hunter_tool}: {e}")
 
-    def run_photorec(self):
-        print("Running PhotoRec...")
+    def run_slayer(self):  # Renamed method for PhotoRec
+        print(f"Running {self.slayer_tool}...")
         try:
-            # Explicitly specifying the full path for photorec
-            photorec_path = self.get_installed_tool_path('photorec') or '/usr/bin/photorec'
-            subprocess.run([photorec_path, "/d", RECOVERY_DIR], check=True)
-            print(f"PhotoRec completed. Results saved in: {RECOVERY_DIR}")
+            # Ensure the recovery directory exists
+            if not os.path.exists(self.recovery_directory):
+                os.makedirs(self.recovery_directory)
+                print(Fore.GREEN + f"Created recovery directory: {self.recovery_directory}")
 
-        except FileNotFoundError as e:
-            print(f"Error: {e}")
-        except subprocess.CalledProcessError as e:
-            print(f"PhotoRec error: {e}")
+            # Run the tool
+            subprocess.run(["/usr/bin/photorec"], cwd=self.recovery_directory, check=True)
+            print(Fore.GREEN + f"{self.slayer_tool} completed successfully!")
+
+        except FileNotFoundError:
+            print(Fore.RED + f"{self.slayer_tool} not found. Please ensure it is correctly installed.")
+        except subprocess.CalledProcessError as cpe:
+            print(Fore.RED + f"{self.slayer_tool} encountered an error while executing: {cpe}")
+        except PermissionError:
+            print(Fore.RED + "Permission denied while accessing the recovery directory. "
+                            "Ensure you have the required permissions.")
         except Exception as e:
-            print(f"An unexpected error occurred while running PhotoRec: {e}")
+            print(Fore.RED + f"An unexpected error occurred while running {self.slayer_tool}: {e}")
+
 
 
     def save_recovery(self, directory=None):
@@ -366,8 +380,8 @@ class FRECE:
         list <directory>                  - List file types and their counts in the specified directory.
         list_files_with_types <directory> - List detailed file types, file names, and directories in the specified directory.
         man <command>                     - Display manual for a specific command.
-        testdisk                          - Run TestDisk for data recovery, recovered files will be saved on the Desktop.
-        photorec                          - Run PhotoRec for data recovery, recovered files will be saved on the Desktop.
+        hunter                            - Run hunter for data recovery, recovered files will be saved on the Desktop.
+        slayer                            - Run slayer for data recovery, recovered files will be saved on the Desktop.
         save <directory>                  - Save recovered files to a specified directory.
         --version                         - Show the tool version.
         --help                            - Display this help message.
@@ -382,8 +396,8 @@ class FRECE:
         - scan /path/to/directory .txt
         - list /path/to/directory
         - list_files_with_types /path/to/directory
-        - testdisk
-        - photorec
+        - hunter
+        - slayer
         - save /path/to/save/directory""")
 
     def show_command_man(self, command):
@@ -399,19 +413,19 @@ class FRECE:
             'list_files_with_types': ("List detailed file types, file names, and directories in the specified directory.\n"
                                     "Usage: list_files_with_types <directory>\n"
                                     "Example: list_files_with_types ~/Documents"),
-            'testdisk': "Run TestDisk to recover partitions and files.\nUsage: testdisk",
-            'photorec': "Run PhotoRec to recover lost files by file signatures.\nUsage: photorec",
+            'hunter': "Run hunter to recover partitions and files.\nUsage: hunter",
+            'slayer': "Run slayer to recover lost files by file signatures.\nUsage: slayer",
             'save': "Save recovered files to the specified directory.\nUsage: save <directory>",
             '--version': "Display the version of this tool.\nUsage: --version",
             '--help': "Display help for commands.\nUsage: --help",
             'frece': ("FRECE (File Recovery Console Enhanced) is a powerful tool designed for recovering files, "
-                    "scanning directories for lost data, and providing data recovery options through utilities like TestDisk and PhotoRec.\n"
+                    "scanning directories for lost data, and providing data recovery options through utilities like hunter and slayer.\n"
                     "\nFeatures:\n"
                     "  - Recover files from source to target directory\n"
                     "  - Scan directories for files, optionally filtering by extension\n"
                     "  - List file types and counts in directories\n"
-                    "  - Recover lost partitions and files with TestDisk\n"
-                    "  - Recover files using file signatures with PhotoRec\n"
+                    "  - Recover lost partitions and files with hunter\n"
+                    "  - Recover files using file signatures with slayer\n"
                     "  - Save recovered files to a user-specified directory\n"
                     "  - Tab autocomplete for file paths, directories, and commands\n"
                     "  - Display tool version and help information\n"
@@ -419,8 +433,8 @@ class FRECE:
                     "  - recover /path/to/source /path/to/target\n"
                     "  - scan /path/to/directory .txt\n"
                     "  - list /path/to/directory\n"
-                    "  - testdisk\n"
-                    "  - photorec\n"
+                    "  - hunter\n"
+                    "  - slayer\n"
                     "  - save /path/to/save/directory\n"
                     "  - --version\n"
                     "  - --help"),
@@ -510,37 +524,11 @@ class FRECE:
                         print(Fore.RED + "Usage: man <command>")
 
 
-                elif command == 'testdisk':
+                elif command == 'hunter':  # Command for TestDisk
                     try:
-                        # Define recovery directory
+                        # Define the recovery directory
                         recovery_directory = os.path.abspath(os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files"))
-                        if not os.path.exists(recovery_directory):
-                            os.makedirs(recovery_directory)
-                            print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
-                        else:
-                            print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
 
-                        # Debugging information
-                        print(f"Debug: Running TestDisk with recovery directory: {recovery_directory}")
-
-                        # Run TestDisk with sudo
-                        subprocess.run(["sudo", "/usr/bin/testdisk", "/log"], cwd=recovery_directory, check=True)
-                        print(Fore.GREEN + "TestDisk completed successfully!")
-                    except FileNotFoundError:
-                        print(Fore.RED + "TestDisk executable not found. Ensure it is correctly installed and accessible.")
-                    except subprocess.CalledProcessError as cpe:
-                        print(Fore.RED + f"TestDisk encountered an error: {cpe}")
-                    except PermissionError:
-                        print(Fore.RED + "Permission denied while accessing the recovery directory.")
-                    except Exception as e:
-                        print(Fore.RED + f"An unexpected error occurred: {e}")
-
-
-                elif command == "photorec":
-                    try:
-                        # Define the recovery directory path
-                        recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-                        
                         # Ensure the recovery directory exists
                         if not os.path.exists(recovery_directory):
                             os.makedirs(recovery_directory)
@@ -548,27 +536,54 @@ class FRECE:
                         else:
                             print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
 
-                        # Run PhotoRec
-                        print(Fore.CYAN + "Launching PhotoRec...")
+                        # Debugging information
+                        print(f"Debug: Running Hunter with recovery directory: {recovery_directory}")
+
+                        # Run Hunter with sudo (TestDisk)
+                        subprocess.run(["sudo", "/usr/bin/testdisk", "/log"], cwd=recovery_directory, check=True)
+                        print(Fore.GREEN + "Hunter (TestDisk) completed successfully!")
+
+                    except FileNotFoundError:
+                        print(Fore.RED + "Hunter (TestDisk) executable not found. Ensure it is correctly installed and accessible.")
+                    except subprocess.CalledProcessError as cpe:
+                        print(Fore.RED + f"Hunter encountered an error: {cpe}")
+                    except PermissionError:
+                        print(Fore.RED + "Permission denied while accessing the recovery directory.")
+                    except Exception as e:
+                        print(Fore.RED + f"An unexpected error occurred: {e}")
+
+                elif command == 'slayer':  # Command for PhotoRec
+                    try:
+                        # Define the recovery directory path
+                        recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+
+                        # Ensure the recovery directory exists
+                        if not os.path.exists(recovery_directory):
+                            os.makedirs(recovery_directory)
+                            print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
+                        else:
+                            print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
+
+                        # Run Slayer (PhotoRec)
+                        print(Fore.CYAN + "Launching Slayer (PhotoRec)...")
                         photorec_path = "/usr/bin/photorec"  # Adjust if PhotoRec is installed in a different location
-                        
+
                         # Verify if PhotoRec exists and is executable
                         if not os.path.isfile(photorec_path) or not os.access(photorec_path, os.X_OK):
-                            raise FileNotFoundError("PhotoRec executable not found or is not executable.")
+                            raise FileNotFoundError("Slayer (PhotoRec) executable not found or is not executable.")
 
                         # Execute PhotoRec with the recovery directory as the output directory
                         subprocess.run([photorec_path], cwd=recovery_directory, check=True)
-                        print(Fore.GREEN + "PhotoRec completed successfully!")
+                        print(Fore.GREEN + "Slayer (PhotoRec) completed successfully!")
 
                     except FileNotFoundError as e:
-                        print(Fore.RED + f"PhotoRec not found: {e}. Please ensure it is correctly installed.")
+                        print(Fore.RED + f"Slayer (PhotoRec) not found: {e}. Please ensure it is correctly installed.")
                     except subprocess.CalledProcessError as cpe:
-                        print(Fore.RED + f"PhotoRec encountered an error while executing: {cpe}")
+                        print(Fore.RED + f"Slayer encountered an error while executing: {cpe}")
                     except PermissionError:
-                        print(Fore.RED + "Permission denied while accessing the recovery directory. "
-                                        "Ensure you have the required permissions.")
+                        print(Fore.RED + "Permission denied while accessing the recovery directory. Ensure you have the required permissions.")
                     except Exception as e:
-                        print(Fore.RED + f"An unexpected error occurred while running PhotoRec: {e}")
+                        print(Fore.RED + f"An unexpected error occurred while running Slayer (PhotoRec): {e}")
 
 
                 elif command.startswith("save"):
@@ -687,7 +702,7 @@ class FRECE:
                             else:
                                 self.show_command_man(args[1])  # Show manual for specific command
 
-                    elif command == 'testdisk':
+                    elif command == 'hunter':  # Command for TestDisk
                         try:
                             # Define the recovery directory path
                             recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
@@ -700,39 +715,39 @@ class FRECE:
                                 print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
 
                             # Debugging info
-                            print(f"Debug: Checking TestDisk executable and privileges...")
+                            print(f"Debug: Checking Hunter (TestDisk) executable and privileges...")
 
-                            # Validate the TestDisk executable
-                            testdisk_path = "/usr/bin/testdisk"
-                            if not os.path.isfile(testdisk_path) or not os.access(testdisk_path, os.X_OK):
-                                raise FileNotFoundError("TestDisk executable not found or is not executable.")
+                            # Validate the Hunter executable
+                            hunter_path = "/usr/bin/testdisk"
+                            if not os.path.isfile(hunter_path) or not os.access(hunter_path, os.X_OK):
+                                raise FileNotFoundError("Hunter (TestDisk) executable not found or is not executable.")
 
                             # Check if the script has root privileges
                             if os.geteuid() != 0:
-                                print(Fore.RED + "TestDisk requires root privileges to run. Please re-run the script with 'sudo'.")
+                                print(Fore.RED + "Hunter (TestDisk) requires root privileges to run. Please re-run the script with 'sudo'.")
                                 return
 
-                            # Run the TestDisk process with sudo
-                            print(Fore.CYAN + "Launching TestDisk with elevated privileges...")
-                            subprocess.run(["sudo", testdisk_path, "/log"], cwd=recovery_directory, check=True)
-                            print(Fore.GREEN + "TestDisk completed successfully!")
+                            # Run the Hunter process with sudo
+                            print(Fore.CYAN + "Launching Hunter (TestDisk) with elevated privileges...")
+                            subprocess.run(["sudo", hunter_path, "/log"], cwd=recovery_directory, check=True)
+                            print(Fore.GREEN + "Hunter (TestDisk) completed successfully!")
 
                         except FileNotFoundError:
-                            print(Fore.RED + "TestDisk executable not found. Please ensure TestDisk is installed and accessible. "
+                            print(Fore.RED + "Hunter (TestDisk) executable not found. Please ensure it is installed and accessible. "
                                             "You can install it using: 'sudo apt install testdisk'")
                         except subprocess.CalledProcessError as cpe:
-                            print(Fore.RED + f"TestDisk encountered an error while executing: {cpe}")
+                            print(Fore.RED + f"Hunter encountered an error while executing: {cpe}")
                         except PermissionError:
                             print(Fore.RED + "Permission denied while accessing the recovery directory. "
                                             "Ensure you have the required permissions.")
                         except Exception as e:
-                            print(Fore.RED + f"An unexpected error occurred while running TestDisk: {e}")
+                            print(Fore.RED + f"An unexpected error occurred while running Hunter (TestDisk): {e}")
 
-                    elif command == 'photorec':
+                    elif command == 'slayer':  # Command for PhotoRec
                         try:
                             # Define the recovery directory path
                             recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-                            
+
                             # Ensure the recovery directory exists
                             if not os.path.exists(recovery_directory):
                                 os.makedirs(recovery_directory)
@@ -740,29 +755,28 @@ class FRECE:
                             else:
                                 print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
 
-                            # Run PhotoRec
-                            print(Fore.CYAN + "Launching PhotoRec...")
+                            # Debugging info
+                            print(Fore.CYAN + "Launching Slayer (PhotoRec)...")
                             
-                            # Validate the PhotoRec executable
-                            photorec_path = "/usr/bin/photorec"
-                            if not os.path.isfile(photorec_path) or not os.access(photorec_path, os.X_OK):
-                                raise FileNotFoundError("PhotoRec executable not found or is not executable.")
-                            
-                            # Run the PhotoRec process
-                            subprocess.run([photorec_path], cwd=recovery_directory, check=True)
-                            print(Fore.GREEN + "PhotoRec completed successfully!")
+                            # Validate the Slayer executable
+                            slayer_path = "/usr/bin/photorec"
+                            if not os.path.isfile(slayer_path) or not os.access(slayer_path, os.X_OK):
+                                raise FileNotFoundError("Slayer (PhotoRec) executable not found or is not executable.")
+
+                            # Run the Slayer process
+                            subprocess.run([slayer_path], cwd=recovery_directory, check=True)
+                            print(Fore.GREEN + "Slayer (PhotoRec) completed successfully!")
 
                         except FileNotFoundError:
-                            print(Fore.RED + "PhotoRec executable not found. Please ensure PhotoRec is installed and accessible. "
+                            print(Fore.RED + "Slayer (PhotoRec) executable not found. Please ensure it is installed and accessible. "
                                             "You can install it using: 'sudo apt install testdisk'")
                         except subprocess.CalledProcessError as cpe:
-                            print(Fore.RED + f"PhotoRec encountered an error while executing: {cpe}")
+                            print(Fore.RED + f"Slayer encountered an error while executing: {cpe}")
                         except PermissionError:
                             print(Fore.RED + "Permission denied while accessing the recovery directory. "
                                             "Ensure you have the required permissions.")
                         except Exception as e:
-                            print(Fore.RED + f"An unexpected error occurred while running PhotoRec: {e}")
-
+                            print(Fore.RED + f"An unexpected error occurred while running Slayer (PhotoRec): {e}")
 
 
                     elif command == 'save':
