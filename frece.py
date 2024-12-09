@@ -83,64 +83,62 @@ class FRECE:
         self.REPO_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "frece_repo")
 
     def scan_directory(self, directory, extension=None):
-        """
-        Scans the directory and returns a list of files, optionally filtering by extension.
-        Supports shorthand paths like 'Trash', 'Desktop', 'Documents', etc.
-        """
+        # Expand to user home directory
+        home_dir = os.path.expanduser("~")
 
-        # Define common shorthand directories
+        # Map common shorthand directories, if specified, to their paths
         shorthand_paths = {
-            "trash": os.path.expanduser("~/.local/share/Trash/files"),  # For Linux
-            "desktop": os.path.join(os.path.expanduser("~"), "Desktop"),
-            "documents": os.path.join(os.path.expanduser("~"), "Documents"),
-            "downloads": os.path.join(os.path.expanduser("~"), "Downloads"),
-            "pictures": os.path.join(os.path.expanduser("~"), "Pictures"),
-            "music": os.path.join(os.path.expanduser("~"), "Music"),
-            "videos": os.path.join(os.path.expanduser("~"), "Videos"),
+            "desktop": os.path.join(home_dir, "Desktop"),
+            "documents": os.path.join(home_dir, "Documents"),
+            "downloads": os.path.join(home_dir, "Downloads"),
+            "pictures": os.path.join(home_dir, "Pictures"),
+            "trash": os.path.join(home_dir, ".local/share/Trash/files"),
         }
 
-        # Ensure directory is a string before calling lower()
-        if not isinstance(directory, str):
-            print(Fore.RED + "Invalid directory path. It must be a string.")
-            return []
-
-        # Expand shorthand paths
-        lower_directory = directory.lower()
-        if lower_directory in shorthand_paths:
-            directory = shorthand_paths[lower_directory]
-            if not os.path.exists(directory):
-                print(Fore.RED + f"{directory} is not accessible on this system.")
-                return []
-
+        # Use shorthand if provided
+        dir_lower = directory.lower()
+        if dir_lower in shorthand_paths:
+            full_path = shorthand_paths[dir_lower]
         else:
-            directory = os.path.expanduser(directory)
-            directory = os.path.abspath(directory)
+            full_path = os.path.abspath(directory)  # Resolve to an absolute path
 
-        try:
-            if not os.path.exists(directory):
-                print(Fore.RED + f"Directory {directory} does not exist.")
-                return []
+        # Check if the directory exists and is accessible
+        if not os.path.exists(full_path):
+            print(Fore.RED + f"Directory '{full_path}' does not exist.")
+            return
 
-            if extension and not extension.startswith("."):
-                extension = f".{extension}"  # Automatically prepend the dot
+        # Attempt to scan the directory
+        if os.path.isdir(full_path):
+            try:
+                files = os.listdir(full_path)
 
-            files = [file for file in Path(directory).rglob('*') if file.is_file()]
-            if extension:
-                files = [file for file in files if file.suffix.lower() == extension.lower()]
-
-            if files:
-                print(Fore.GREEN + f"Scanned {directory} and found {len(files)} files.")
+                # Filter by extension if specified
                 if extension:
-                    print(Fore.GREEN + f"Filtered by extension: {extension}")
-            else:
-                print(Fore.YELLOW + f"No files found in {directory}.")
+                    files = [f for f in files if f.endswith(extension)]
 
-            return files
-        except PermissionError:
-            print(Fore.RED + "Permission denied while accessing the directory.")
-            return []
+                found_files = len(files)
+                print(f"Scanned '{full_path}' and found {found_files} files.")
 
+                for file in files:
+                    print(file)  # List the files
+            except PermissionError:
+                print(Fore.RED + f"'{full_path}' is not accessible on this system.")
+                print(f"Found 0 files in '{directory}'.")
+            except Exception as e:
+                print(Fore.RED + f"An error occurred while scanning: {e}")
+        else:
+            print(Fore.RED + f"'{full_path}' is not a valid directory.")
+            print(f"Found 0 files in '{directory}'.")
 
+    def run_scan_command(self, args):
+        if len(args) < 1:
+            print(Fore.RED + "Usage: scan <directory> [extension]")
+            return
+
+        directory = args[0]  # The first argument is the directory
+
+        # Call the scan_directory method
+        self.scan_directory(directory)
 
     def list_files_with_types(self, directory):
         """
@@ -529,19 +527,18 @@ class FRECE:
                         print(Fore.RED + "Invalid number of arguments. Usage: recover <source_dir> [extension] <target_dir>")
 
                 elif command.startswith("scan"):
-                        parts = command.split(maxsplit=2)
-
-                        if len(parts) >= 2:
-                            directory = parts[1]
-                            ext = parts[2] if len(parts) == 3 else None
-                            files = self.scan_directory(directory, ext)
-                        if files is not None:  # Check if files is returned correctly
-                            print(Fore.GREEN + f"Found {len(files)} files in {directory}.")
-                            if ext:
-                                print(Fore.GREEN + f"Files filtered by extension: {ext}")
+                            parts = command.split(maxsplit=2)  # Split the command into parts
+                            if len(parts) >= 2:
+                                directory = parts[1]  # The directory to scan
+                                ext = parts[2] if len(parts) == 3 else None  # Optional extension
+                                files = self.scan_directory(directory, ext)
+                                if files:  # Check if files was successfully retrieved
+                                    print(Fore.GREEN + f"Found {len(files)} files in '{directory}'.")
+                                    if ext:
+                                        print(Fore.GREEN + f"Files filtered by extension: {ext}")
                             else:
                                 print(Fore.RED + "Usage: scan <directory> [extension]")
-                
+
                 elif command.startswith("update"):
                     self.update_tool()  # Calls the update method
 
@@ -708,18 +705,23 @@ class FRECE:
                                     print(Fore.GREEN + f"Recovery from {source} to {target} completed.")
 
                     elif command == 'scan':
-                        if len(args) < 2:
+                        if len(args) < 1:
                             print(Fore.RED + "Usage: scan <directory> [extension]")
                         else:
-                            directory = args[1]
-                            extension = args[2] if len(args) > 2 else None
+                            directory = args[0]  # Get the target directory from arguments
+                            extension = args[1] if len(args) > 1 else None  # Optional extension if provided
 
-                            # No need to check if directory exists since scan_directory handles it
+                            # Call the scan_directory method
                             files = self.scan_directory(directory, extension)
-                            if files is not None:  # Check if files is returned correctly
+
+                            # Check if files was retrieved correctly
+                            if files is not None:
                                 print(Fore.GREEN + f"Found {len(files)} files in '{directory}'.")
                                 if extension:
                                     print(Fore.GREEN + f"Filtered by extension: {extension}")
+                            else:
+                                print(Fore.RED + "No files found or an error occurred during scanning.")
+
 
 
                     elif '--update' in args:
@@ -865,6 +867,7 @@ class FRECE:
 # ================== Execution ==================
 
 if __name__ == "__main__":
-    tool = FRECE()  # Instantiate the FRECE class
-    tool.start()    # Call the start method
-    tool.update_tool()  # Call update_tool to test functionality
+    frece_tool = FRECE()
+    frece_tool.start()
+    frece_tool.update_tool()  # Call update_tool to test functionality
+
