@@ -224,6 +224,17 @@ if [ ! -d "$REPO_DIR" ]; then
     exit 1
 fi
 
+
+# Function to check if readline library is installed
+check_readline() {
+    if ! python3 -c "import readline" &> /dev/null; then
+        echo "Readline library not found! Please make sure it's installed for tab completion in the FRECE tool."
+    fi
+}
+
+# Call the check_readline function
+check_readline
+
 # Move the main script to the installation directory
 
 echo "Setting up the tool..."
@@ -238,10 +249,16 @@ chmod +x "$INSTALL_DIR/$TOOL_NAME"
 
 rm -rf "$REPO_DIR"
 
-# Display the success message
+# After completing the installation process...
 
-echo "Installation successful! To run '$TOOL_NAME', activate the virtual environment:"
-echo "source $VENV_DIR/bin/activate && $TOOL_NAME --help"
-
+echo "Installation successful!"
+echo ""
+echo "To run the '$TOOL_NAME', activate the virtual environment with the following command:"
+echo "    source $VENV_DIR/bin/activate && $TOOL_NAME --help"
+echo ""
 echo "You can use '$HUNTER_TOOL' to recover partitions and files."
 echo "You can use '$SLAYER_TOOL' to recover lost files by file signatures."
+echo ""
+echo "The FRECE tool now supports tab completion in interactive mode."
+echo "You can use the 'scan' command to find files and directories."
+echo ""
