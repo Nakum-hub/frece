@@ -541,10 +541,10 @@ class FRECE:
 
                         # Run Hunter with sudo (TestDisk)
                         subprocess.run(["sudo", "/usr/bin/testdisk", "/log"], cwd=recovery_directory, check=True)
-                        print(Fore.GREEN + "Hunter (TestDisk) completed successfully!")
+                        print(Fore.GREEN + "Hunter completed successfully!")
 
                     except FileNotFoundError:
-                        print(Fore.RED + "Hunter (TestDisk) executable not found. Ensure it is correctly installed and accessible.")
+                        print(Fore.RED + "Hunter executable not found. Ensure it is correctly installed and accessible.")
                     except subprocess.CalledProcessError as cpe:
                         print(Fore.RED + f"Hunter encountered an error: {cpe}")
                     except PermissionError:
@@ -565,25 +565,25 @@ class FRECE:
                             print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
 
                         # Run Slayer (PhotoRec)
-                        print(Fore.CYAN + "Launching Slayer (PhotoRec)...")
+                        print(Fore.CYAN + "Launching Slayer ...")
                         photorec_path = "/usr/bin/photorec"  # Adjust if PhotoRec is installed in a different location
 
                         # Verify if PhotoRec exists and is executable
                         if not os.path.isfile(photorec_path) or not os.access(photorec_path, os.X_OK):
-                            raise FileNotFoundError("Slayer (PhotoRec) executable not found or is not executable.")
+                            raise FileNotFoundError("Slayer executable not found or is not executable.")
 
                         # Execute PhotoRec with the recovery directory as the output directory
                         subprocess.run([photorec_path], cwd=recovery_directory, check=True)
-                        print(Fore.GREEN + "Slayer (PhotoRec) completed successfully!")
+                        print(Fore.GREEN + "Slayer completed successfully!")
 
                     except FileNotFoundError as e:
-                        print(Fore.RED + f"Slayer (PhotoRec) not found: {e}. Please ensure it is correctly installed.")
+                        print(Fore.RED + f"Slayer not found: {e}. Please ensure it is correctly installed.")
                     except subprocess.CalledProcessError as cpe:
                         print(Fore.RED + f"Slayer encountered an error while executing: {cpe}")
                     except PermissionError:
                         print(Fore.RED + "Permission denied while accessing the recovery directory. Ensure you have the required permissions.")
                     except Exception as e:
-                        print(Fore.RED + f"An unexpected error occurred while running Slayer (PhotoRec): {e}")
+                        print(Fore.RED + f"An unexpected error occurred while running Slayer: {e}")
 
 
                 elif command.startswith("save"):
@@ -715,25 +715,25 @@ class FRECE:
                                 print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
 
                             # Debugging info
-                            print(f"Debug: Checking Hunter (TestDisk) executable and privileges...")
+                            print(f"Debug: Checking Hunter executable and privileges...")
 
                             # Validate the Hunter executable
                             hunter_path = "/usr/bin/testdisk"
                             if not os.path.isfile(hunter_path) or not os.access(hunter_path, os.X_OK):
-                                raise FileNotFoundError("Hunter (TestDisk) executable not found or is not executable.")
+                                raise FileNotFoundError("Hunter executable not found or is not executable.")
 
                             # Check if the script has root privileges
                             if os.geteuid() != 0:
-                                print(Fore.RED + "Hunter (TestDisk) requires root privileges to run. Please re-run the script with 'sudo'.")
+                                print(Fore.RED + "Hunter  requires root privileges to run. Please re-run the script with 'sudo'.")
                                 return
 
                             # Run the Hunter process with sudo
-                            print(Fore.CYAN + "Launching Hunter (TestDisk) with elevated privileges...")
+                            print(Fore.CYAN + "Launching Hunter with elevated privileges...")
                             subprocess.run(["sudo", hunter_path, "/log"], cwd=recovery_directory, check=True)
-                            print(Fore.GREEN + "Hunter (TestDisk) completed successfully!")
+                            print(Fore.GREEN + "Hunter completed successfully!")
 
                         except FileNotFoundError:
-                            print(Fore.RED + "Hunter (TestDisk) executable not found. Please ensure it is installed and accessible. "
+                            print(Fore.RED + "Hunter executable not found. Please ensure it is installed and accessible. "
                                             "You can install it using: 'sudo apt install testdisk'")
                         except subprocess.CalledProcessError as cpe:
                             print(Fore.RED + f"Hunter encountered an error while executing: {cpe}")
@@ -756,27 +756,27 @@ class FRECE:
                                 print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
 
                             # Debugging info
-                            print(Fore.CYAN + "Launching Slayer (PhotoRec)...")
+                            print(Fore.CYAN + "Launching Slayer...")
                             
                             # Validate the Slayer executable
                             slayer_path = "/usr/bin/photorec"
                             if not os.path.isfile(slayer_path) or not os.access(slayer_path, os.X_OK):
-                                raise FileNotFoundError("Slayer (PhotoRec) executable not found or is not executable.")
+                                raise FileNotFoundError("Slayer executable not found or is not executable.")
 
                             # Run the Slayer process
                             subprocess.run([slayer_path], cwd=recovery_directory, check=True)
-                            print(Fore.GREEN + "Slayer (PhotoRec) completed successfully!")
+                            print(Fore.GREEN + "Slayer completed successfully!")
 
                         except FileNotFoundError:
-                            print(Fore.RED + "Slayer (PhotoRec) executable not found. Please ensure it is installed and accessible. "
-                                            "You can install it using: 'sudo apt install testdisk'")
+                            print(Fore.RED + "Slayer executable not found. Please ensure it is installed and accessible. "
+                                            "You can install it using: 'sudo apt install photorec'")
                         except subprocess.CalledProcessError as cpe:
                             print(Fore.RED + f"Slayer encountered an error while executing: {cpe}")
                         except PermissionError:
                             print(Fore.RED + "Permission denied while accessing the recovery directory. "
                                             "Ensure you have the required permissions.")
                         except Exception as e:
-                            print(Fore.RED + f"An unexpected error occurred while running Slayer (PhotoRec): {e}")
+                            print(Fore.RED + f"An unexpected error occurred while running Slayer: {e}")
 
 
                     elif command == 'save':
