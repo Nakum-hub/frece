@@ -104,6 +104,12 @@ class FRECE:
 
         # Check if the directory exists and is accessible
         if not os.path.exists(full_path):
+            # Additional handling for the root user
+            if os.geteuid() == 0:  # Check if running as root
+                print(Fore.YELLOW + f"Running as root. Attempting to scan '{full_path}' anyway.")
+                # If the directory does not exist, show a message but allow the scan
+                pass  # Continue to attempt the scan for root access
+            
             print(Fore.RED + f"Directory '{full_path}' does not exist.")
             return
 
@@ -130,15 +136,17 @@ class FRECE:
             print(Fore.RED + f"'{full_path}' is not a valid directory.")
             print(f"Found 0 files in '{directory}'.")
 
+
     def run_scan_command(self, args):
         if len(args) < 1:
             print(Fore.RED + "Usage: scan <directory> [extension]")
             return
 
         directory = args[0]  # The first argument is the directory
+        extension = args[1] if len(args) > 1 else None  # Optional extension if provided
 
         # Call the scan_directory method
-        self.scan_directory(directory)
+        self.scan_directory(directory, extension)
 
     def list_files_with_types(self, directory):
         """
@@ -193,19 +201,30 @@ class FRECE:
 
     def setup_tab_completion(self):
         def tab_autocomplete(text, state):
+            options = []
             directory, partial = os.path.split(text)
+
+            # Default to current directory if none specified
             if not directory:
                 directory = '.'
+
+            # Attempt to list all directories in the specified path
             try:
+                # Gather all directories/files present in the current directory
                 entries = os.listdir(directory)
                 options = [os.path.join(directory, f) for f in entries if f.startswith(partial)]
             except FileNotFoundError:
-                options = []
-            try:
+                options = []  # If the directory doesn't exist, return an empty list
+            except PermissionError:
+                options = []  # Handle case where directory access is denied
+
+            # Provide the options based on the current state
+            if state < len(options):
                 return options[state]
-            except IndexError:
+            else:
                 return None
 
+        # Set the tab completer
         try:
             readline.set_completer(tab_autocomplete)
             readline.parse_and_bind("tab: complete")
@@ -527,17 +546,20 @@ class FRECE:
                         print(Fore.RED + "Invalid number of arguments. Usage: recover <source_dir> [extension] <target_dir>")
 
                 elif command.startswith("scan"):
-                            parts = command.split(maxsplit=2)  # Split the command into parts
-                            if len(parts) >= 2:
-                                directory = parts[1]  # The directory to scan
-                                ext = parts[2] if len(parts) == 3 else None  # Optional extension
-                                files = self.scan_directory(directory, ext)
-                                if files:  # Check if files was successfully retrieved
-                                    print(Fore.GREEN + f"Found {len(files)} files in '{directory}'.")
-                                    if ext:
-                                        print(Fore.GREEN + f"Files filtered by extension: {ext}")
-                            else:
-                                print(Fore.RED + "Usage: scan <directory> [extension]")
+                    parts = command.split(maxsplit=2)  # Split the command into parts
+                    if len(parts) >= 2:
+                        directory = parts[1]  # The directory to scan
+                        ext = parts[2] if len(parts) == 3 else None  # Optional extension
+                        
+                        # Call the scan_directory method with directory and extension
+                        files = self.scan_directory(directory, ext)
+                        if files:  # Check if files were successfully retrieved
+                            print(Fore.GREEN + f"Found {len(files)} files in '{directory}'.")
+                            if ext:
+                                print(Fore.GREEN + f"Files filtered by extension: {ext}")
+                    else:
+                        print(Fore.RED + "Usage: scan <directory> [extension]")
+
 
                 elif command.startswith("update"):
                     self.update_tool()  # Calls the update method
