@@ -1,5 +1,15 @@
 #!/bin/bash
 
+# Function to check internet connectivity
+check_internet() {
+    # Try to ping a reliable external server
+    if ! ping -c 1 8.8.8.8 &> /dev/null; then
+        echo "No internet connection. Please check your network settings."
+        exit 1
+    fi
+}
+
+
 # Variables
 
 REPO_URL="https://github.com/Nakum-hub/frece.git"
