@@ -285,7 +285,7 @@ class FRECE:
         default_recovery_directory = os.path.join(home_dir, "Desktop", "frece_repo")
 
         try:
-            # If target_dir is not provided, use the default recovery directory
+            # Resolve target_dir; use default if not provided
             if target_dir is None:
                 target_dir = default_recovery_directory
 
@@ -575,19 +575,36 @@ class FRECE:
             try:
                 command = input(Fore.YELLOW + "frece > ").strip()
 
+
                 if command.startswith("recover"):
                     command_parts = command.split()
 
                     if len(command_parts) == 3:  # source, target
                         _, source, target = command_parts
-                        
-                        # Validate and process paths
-                        target = target if target.lower() != 'frece_repo' else None  # Handle case for default target
 
+                        # Allow for shorthand directory names
+                        shorthand_paths = {
+                            "trash": os.path.join(os.path.expanduser("~"), ".local/share/Trash/files"),
+                            "desktop": os.path.join(os.path.expanduser("~"), "Desktop"),
+                            "documents": os.path.join(os.path.expanduser("~"), "Documents"),
+                            "downloads": os.path.join(os.path.expanduser("~"), "Downloads"),
+                            "pictures": os.path.join(os.path.expanduser("~"), "Pictures"),
+                        }
+
+                        # Resolve shorthand paths
+                        source_lower = source.lower()
+                        if source_lower in shorthand_paths:
+                            source = shorthand_paths[source_lower]
+                        else:
+                            source = os.path.abspath(source)
+
+                        # Validate and process paths
                         if not os.path.exists(source):
                             print(Fore.RED + f"Source directory {source} does not exist.")
                         else:
-                            # If target is None, fallback to default recovery directory
+                            # If target is not specified or is 'frece_repo', fallback to default recovery directory
+                            target = target if target.lower() != 'frece_repo' else None
+                            
                             if target is None:
                                 target = os.path.join(os.path.expanduser("~"), "Desktop", "frece_repo")
 
@@ -596,20 +613,36 @@ class FRECE:
                                 print(Fore.RED + f"Target directory {target} does not exist. Creating it now.")
                                 os.makedirs(target, exist_ok=True)
                                 print(Fore.GREEN + f"Created target directory: {target}")
-                            
+
                             print(Fore.GREEN + f"Recovering all files and directories from {source} to {target}...")
                             self.recover_files(source, target)  # Recover both files and directories
 
                     elif len(command_parts) == 4:  # source, extension, target
                         _, source, extension, target = command_parts
-                        
-                        # Validate and process paths
-                        target = target if target.lower() != 'frece_repo' else None  # Handle case for default target
 
+                        # Allow for shorthand directory names
+                        shorthand_paths = {
+                            "trash": os.path.join(os.path.expanduser("~"), ".local/share/Trash/files"),
+                            "desktop": os.path.join(os.path.expanduser("~"), "Desktop"),
+                            "documents": os.path.join(os.path.expanduser("~"), "Documents"),
+                            "downloads": os.path.join(os.path.expanduser("~"), "Downloads"),
+                            "pictures": os.path.join(os.path.expanduser("~"), "Pictures"),
+                        }
+
+                        # Resolve shorthand paths
+                        source_lower = source.lower()
+                        if source_lower in shorthand_paths:
+                            source = shorthand_paths[source_lower]
+                        else:
+                            source = os.path.abspath(source)
+
+                        # Validate and process paths
                         if not os.path.exists(source):
                             print(Fore.RED + f"Source directory {source} does not exist.")
                         else:
-                            # If target is None, fallback to default recovery directory
+                            # If target is not specified or is 'frece_repo', fallback to default recovery directory
+                            target = target if target.lower() != 'frece_repo' else None
+                            
                             if target is None:
                                 target = os.path.join(os.path.expanduser("~"), "Desktop", "frece_repo")
 
@@ -624,6 +657,7 @@ class FRECE:
 
                     else:
                         print(Fore.RED + "Invalid number of arguments. Usage: recover <source_dir> [extension] [target_dir]")
+
 
                 elif command.startswith("scan"):
                     parts = command.split(maxsplit=2)  # Split the command into parts
@@ -799,7 +833,7 @@ class FRECE:
             Entry point for the tool to process CLI arguments or launch interactive mode.
             """
             self.setup_tab_completion()  # Set up tab completion at the start
-            
+
             try:
                 if len(sys.argv) > 1:
                     args = sys.argv[1:]
@@ -811,61 +845,66 @@ class FRECE:
                     elif command == '--help':
                         self.show_help()  # Display help for all commands
 
-                    elif command == 'recover':
-                        if len(args) < 2:
-                            print(Fore.RED + "Usage: recover <source_dir> [target_dir] [extension]")
+                        if args[0].lower() == 'recover':
+                            if len(args) < 2:
+                                print(Fore.RED + "Usage: recover <source_dir> [target_dir] [extension]")
+                            else:
+                                source = args[1]
+                                target = args[2] if len(args) > 2 else None  # Target can be None, which will default during recovery
+                                extension = args[3] if len(args) > 3 else None
+
+                                # Resolve shorthand paths for source directory
+                                home_dir = os.path.expanduser("~")
+                                shorthand_paths = {
+                                    "desktop": os.path.join(home_dir, "Desktop"),
+                                    "documents": os.path.join(home_dir, "Documents"),
+                                    "downloads": os.path.join(home_dir, "Downloads"),
+                                    "pictures": os.path.join(home_dir, "Pictures"),
+                                    "trash": os.path.join(home_dir, ".local/share/Trash/files"),
+                                }
+
+                                source_lower = source.lower()
+                                if source_lower in shorthand_paths:
+                                    source = shorthand_paths[source_lower]
+                                else:
+                                    source = os.path.abspath(source)
+                                
+                                # Validate source directory existence
+                                if not os.path.exists(source):
+                                    print(Fore.RED + f"Source directory '{source}' does not exist.")
+                                    return
+                                
+                                # If target directory is None, set it to default
+                                if target is None:
+                                    target = os.path.join(home_dir, "Desktop", "frece_repo")
+
+                                # Validate target directory existence
+                                if not os.path.exists(target):
+                                    print(Fore.RED + f"Target directory '{target}' does not exist. Creating target directory.")
+                                    os.makedirs(target, exist_ok=True)  # Create the target directory if it doesn't exist
+                                    print(Fore.GREEN + f"Created target directory: {target}")
+
+                                # Inform the user of the recovery operation
+                                if extension:
+                                    print(Fore.GREEN + f"Recovering files with extension '{extension}' from {source} to {target}...")
+                                else:
+                                    print(Fore.GREEN + f"Recovering all files and directories from {source} to {target}...")
+
+                                # Call the recovery method
+                                self.recover_files(source, target, extension)
+
+                                # Check if any files were recovered (for feedback)
+                                if extension:
+                                    # If extension is specified, check for matching files
+                                    files_recovered = [file for file in os.listdir(source) if file.endswith(extension)]
+                                    if not files_recovered:
+                                        print(Fore.YELLOW + f"No files with extension '{extension}' found in {source}.")
+                                else:
+                                    # If no extension is specified, simply inform the user about the recovery
+                                    print(Fore.GREEN + f"Recovery from {source} to {target} completed.")
+
                         else:
-                            source = args[1]
-                            target = args[2] if len(args) > 2 else None  # Target can be None, which will default during recovery
-                            extension = args[3] if len(args) > 3 else None
-
-                            # Resolve shorthand paths for source directory
-                            home_dir = os.path.expanduser("~")
-                            shorthand_paths = {
-                                "desktop": os.path.join(home_dir, "Desktop"),
-                                "documents": os.path.join(home_dir, "Documents"),
-                                "downloads": os.path.join(home_dir, "Downloads"),
-                                "pictures": os.path.join(home_dir, "Pictures"),
-                                "trash": os.path.join(home_dir, ".local/share/Trash/files"),
-                            }
-
-                            source_lower = source.lower()
-                            if source_lower in shorthand_paths:
-                                source = shorthand_paths[source_lower]
-
-                            # Validate source directory existence
-                            if not os.path.exists(source):
-                                print(Fore.RED + f"Source directory '{source}' does not exist.")
-                                return
-                            
-                            # If target directory is None, set it to default
-                            if target is None:
-                                target = os.path.join(home_dir, "Desktop", "frece_repo")
-
-                            # Validate target directory existence
-                            if not os.path.exists(target):
-                                print(Fore.RED + f"Target directory '{target}' does not exist. Creating target directory.")
-                                os.makedirs(target, exist_ok=True)  # Create the target directory if it doesn't exist
-                                print(Fore.GREEN + f"Created target directory: {target}")
-
-                            # Inform the user of the recovery operation
-                            if extension:
-                                print(Fore.GREEN + f"Recovering files with extension '{extension}' from {source} to {target}...")
-                            else:
-                                print(Fore.GREEN + f"Recovering all files and directories from {source} to {target}...")
-
-                            # Call the recovery method
-                            self.recover_files(source, target, extension)
-
-                            # Check if any files were recovered (for feedback)
-                            if extension:
-                                # If extension is specified, check for matching files
-                                files_recovered = [file for file in os.listdir(source) if file.endswith(extension)]
-                                if not files_recovered:
-                                    print(Fore.YELLOW + f"No files with extension '{extension}' found in {source}.")
-                            else:
-                                # If no extension is specified, simply inform the user about the recovery
-                                print(Fore.GREEN + f"Recovery from {source} to {target} completed.")
+                            print(Fore.RED + "Invalid command. Type 'recover <source_dir>' for recovery.")
 
 
                     elif command == 'scan':
