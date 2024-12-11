@@ -1,5 +1,81 @@
 #!/bin/bash
 
+# Function to check if required directories exist and create them if necessary
+create_required_directories() {
+    if [ ! -d "$FRECE_DIR" ]; then
+        echo "Creating the required directory: $FRECE_DIR..."
+        mkdir -p "$FRECE_DIR" || {
+            echo "Failed to create $FRECE_DIR. Exiting."
+            exit 1
+        }
+    fi
+
+    if [ ! -d "$REPO_DIR" ]; then
+        echo "Creating the REPO_DIR directory: $REPO_DIR..."
+        mkdir -p "$REPO_DIR" || {
+            echo "Failed to create REPO_DIR directory. Exiting."
+            exit 1
+        }
+    fi
+}
+
+# Function to install necessary dependencies
+install_dependencies() {
+    echo "Checking for necessary dependencies..."
+    if ! command -v git &> /dev/null; then
+        echo "Git is not installed. Installing Git..."
+        sudo apt install -y git || {
+            echo "Failed to install Git. Exiting."
+            exit 1
+        }
+    fi
+
+    if ! command -v python3 &> /dev/null; then
+        echo "Python 3 is not installed. Installing Python 3..."
+        sudo apt install -y python3 || {
+            echo "Failed to install Python 3. Exiting."
+            exit 1
+        }
+    fi
+
+    # Add more dependency checks as needed
+}
+
+
+
+# Function to check and install Tab Completion dependencies
+check_tab_dependencies() {
+    echo "Checking for tab completion dependencies..."
+    
+    # Check for readline development package (might be necessary for Python readline)
+    if ! dpkg -l | grep -q libreadline-dev; then
+        echo "libreadline-dev is not installed. Installing..."
+        sudo apt install -y libreadline-dev || {
+            echo "Failed to install libreadline-dev. Exiting."
+            exit 1
+        }
+    else
+        echo "libreadline-dev is already installed."
+    fi
+
+    # Check if Python readline module is available
+    if ! python3 -c "import readline" &> /dev/null; then
+        echo "Python readline module is not installed. Installing..."
+        pip install readline || {
+            echo "Failed to install Python readline module. Exiting."
+            exit 1
+        }
+    else
+        echo "Python readline module is already installed."
+    fi
+}
+
+# Call this function at the appropriate place in your install script
+check_tab_dependencies  # Add this line in the main section before setup steps
+
+
+
+
 # Function to check internet connectivity
 check_internet() {
     # Try to ping a reliable external server
@@ -41,6 +117,7 @@ create_directories() {
         }
     fi
 }
+
 
 # Install or update functionality
 

@@ -204,19 +204,28 @@ class FRECE:
             options = []
             directory, partial = os.path.split(text)
 
-            # Default to current directory if none specified
+            # Default to the current directory if none specified
             if not directory:
                 directory = '.'
 
+            # Normalize the path
+            directory = os.path.abspath(directory)
+
             # Attempt to list all directories in the specified path
-            try:
-                # Gather all directories/files present in the current directory
-                entries = os.listdir(directory)
-                options = [os.path.join(directory, f) for f in entries if f.startswith(partial)]
-            except FileNotFoundError:
-                options = []  # If the directory doesn't exist, return an empty list
-            except PermissionError:
-                options = []  # Handle case where directory access is denied
+            if os.path.isdir(directory):
+                try:
+                    # Gather all directories/files present in the specified directory
+                    entries = os.listdir(directory)
+                    options = [f for f in entries if f.startswith(partial)]
+                    options = [os.path.join(directory, f) for f in options]  # Complete paths
+                except PermissionError:
+                    options = []  # Handle case where directory access is denied
+                except Exception as e:
+                    print(f"An error occurred: {e}")
+                    options = []  # Handle other potential exceptions
+            else:
+                print(f"{directory} is not a valid directory.")
+                return []
 
             # Provide the options based on the current state
             if state < len(options):
@@ -228,8 +237,8 @@ class FRECE:
         try:
             readline.set_completer(tab_autocomplete)
             readline.parse_and_bind("tab: complete")
-        except AttributeError:
-            print("Tab completion is not supported on this platform.")
+        except Exception as e:
+            print(f"Tab completion setup failed: {e}")
 
 
     def recover_files(self, source_dir, target_dir, extension=None):
