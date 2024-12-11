@@ -83,6 +83,7 @@ class FRECE:
         self.REPO_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "frece_repo")
 
     def scan_directory(self, directory, extension=None):
+
         # Expand to user home directory
         home_dir = os.path.expanduser("~")
 
@@ -107,8 +108,10 @@ class FRECE:
             # Additional handling for the root user
             if os.geteuid() == 0:  # Check if running as root
                 print(Fore.YELLOW + f"Running as root. Attempting to scan '{full_path}' anyway.")
-                # If the directory does not exist, show a message but allow the scan
-                pass  # Continue to attempt the scan for root access
+                # Attempt to access the user's corresponding directory when running as root
+                user_full_path = shorthand_paths.get(dir_lower, None)  # Get user directory path
+                if user_full_path and os.path.exists(user_full_path):
+                    full_path = user_full_path  # Change full_path to user's path
             
             print(Fore.RED + f"Directory '{full_path}' does not exist.")
             return
@@ -136,7 +139,6 @@ class FRECE:
             print(Fore.RED + f"'{full_path}' is not a valid directory.")
             print(f"Found 0 files in '{directory}'.")
 
-
     def run_scan_command(self, args):
         if len(args) < 1:
             print(Fore.RED + "Usage: scan <directory> [extension]")
@@ -147,6 +149,7 @@ class FRECE:
 
         # Call the scan_directory method
         self.scan_directory(directory, extension)
+
 
     def list_files_with_types(self, directory):
         """
@@ -211,20 +214,28 @@ class FRECE:
             # Normalize the path
             directory = os.path.abspath(directory)
 
+            # Command context handling for autocompletion
+            if text.startswith("scan "):
+                base_dir = os.path.expanduser("~")  # Scan command references user directories
+            elif text.startswith("recover ") or text.startswith("save "):
+                base_dir = os.path.expanduser("~")  # Similar logic for recover and save commands
+            else:
+                base_dir = directory  # Default to the specified directory
+
             # Attempt to list all directories in the specified path
-            if os.path.isdir(directory):
+            if os.path.isdir(base_dir):
                 try:
                     # Gather all directories/files present in the specified directory
-                    entries = os.listdir(directory)
+                    entries = os.listdir(base_dir)
                     options = [f for f in entries if f.startswith(partial)]
-                    options = [os.path.join(directory, f) for f in options]  # Complete paths
+                    options = [os.path.join(base_dir, f) for f in options]  # Complete paths
                 except PermissionError:
                     options = []  # Handle case where directory access is denied
                 except Exception as e:
                     print(f"An error occurred: {e}")
                     options = []  # Handle other potential exceptions
             else:
-                print(f"{directory} is not a valid directory.")
+                print(f"{base_dir} is not a valid directory.")
                 return []
 
             # Provide the options based on the current state
