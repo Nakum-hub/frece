@@ -388,20 +388,19 @@ class FRECE:
             os.makedirs(self.REPO_DIR, exist_ok=True)
 
 
-    def update_tool(self):
-        try:
-            self.create_directories()  # Ensure REPO_DIR exists
-
-            # Update repository if it exists
-            if os.path.exists(self.REPO_DIR):
-                print(Fore.GREEN + "Updating the tool...")
-                os.chdir(self.REPO_DIR)
+    def update_tool_if_required(self):
+        # Check if REPO_DIR is a valid Git repository before attempting to update
+        if os.path.exists(os.path.join(self.REPO_DIR, ".git")):
+            print(Fore.GREEN + "Updating the tool...")
+            os.chdir(self.REPO_DIR)
+            try:
                 subprocess.run(["git", "pull"], check=True)
                 print(Fore.GREEN + "Tool updated successfully!")
-            else:
-                print(Fore.RED + "Tool not installed. Please install it first.")
-        except Exception as e:
-            print(Fore.RED + f"An error occurred during update: {e}")
+            except subprocess.CalledProcessError:
+                print(Fore.RED + "Failed to pull updates. Please check your network connection.")
+
+    # Call this in interactive_mode if you want the update logic before exiting
+
 
 
     def save_recovery(self, directory=None):
