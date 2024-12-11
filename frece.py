@@ -359,6 +359,7 @@ class FRECE:
         except Exception as e:
             print(Fore.RED + f"Error during recovery: {e}")
 
+
     def get_installed_tool_path(self, tool_name):
             """
             Helper method to locate the tool's executable path using the 'which' command for Linux
