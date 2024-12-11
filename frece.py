@@ -156,9 +156,25 @@ class FRECE:
         Lists the types of files, file names, and directories in the given directory
         and counts their occurrences.
         """
-        
 
-        directory = os.path.abspath(os.path.expanduser(directory))
+        # Get the current user's home directory
+        home_dir = os.path.expanduser("~")
+
+        # Map common shorthand directories to their paths
+        shorthand_paths = {
+            "desktop": os.path.join(home_dir, "Desktop"),
+            "documents": os.path.join(home_dir, "Documents"),
+            "downloads": os.path.join(home_dir, "Downloads"),
+            "pictures": os.path.join(home_dir, "Pictures"),
+            "trash": os.path.join(home_dir, ".local/share/Trash/files"),
+        }
+
+        # Use shorthand if provided
+        dir_lower = directory.lower()
+        if dir_lower in shorthand_paths:
+            directory = shorthand_paths[dir_lower]
+        else:
+            directory = os.path.abspath(os.path.expanduser(directory))
 
         if not os.path.exists(directory):
             print(Fore.RED + f"Directory {directory} does not exist.")
@@ -252,39 +268,62 @@ class FRECE:
             print(f"Tab completion setup failed: {e}")
 
 
-    def recover_files(self, source_dir, target_dir, extension=None):
+    def recover_files(self, source_dir, extension=None):
         """
-        Recovers files and directories from the source directory to the target directory.
+        Recovers files and directories from the source directory to the default recovery directory.
 
         Args:
             source_dir (str): Path to the source directory.
-            target_dir (str): Path to the target directory.
             extension (str, optional): File extension to filter files. Recovers all files if not specified.
         """
-        try:
-            print(Fore.GREEN + f"Starting recovery from {source_dir} to {target_dir}...")
 
-            # Create the target directory if it doesn't exist
-            if not os.path.exists(target_dir):
-                os.makedirs(target_dir)
-                print(Fore.GREEN + f"Created target directory: {target_dir}")
+        # Get the current user's home directory
+        home_dir = os.path.expanduser("~")
+
+        # Define the default recovery directory
+        recovery_directory = os.path.join(home_dir, "Desktop", "frece_repo")
+
+        try:
+            print(Fore.GREEN + f"Starting recovery from {source_dir} to {recovery_directory}...")
+
+            # Check if the recovery directory exists; create it if it doesn't
+            if not os.path.exists(recovery_directory):
+                os.makedirs(recovery_directory)
+                print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
+            else:
+                print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
+
+            # Resolve source directory using shorthand if provided
+            shorthand_paths = {
+                "desktop": os.path.join(home_dir, "Desktop"),
+                "documents": os.path.join(home_dir, "Documents"),
+                "downloads": os.path.join(home_dir, "Downloads"),
+                "pictures": os.path.join(home_dir, "Pictures"),
+                "trash": os.path.join(home_dir, ".local/share/Trash/files"),
+            }
+
+            source_dir_lower = source_dir.lower()
+            if source_dir_lower in shorthand_paths:
+                source_full_path = shorthand_paths[source_dir_lower]
+            else:
+                source_full_path = os.path.abspath(source_dir)
 
             # Check if source_dir exists
-            if not os.path.exists(source_dir):
-                print(Fore.RED + f"Source directory {source_dir} does not exist.")
+            if not os.path.exists(source_full_path):
+                print(Fore.RED + f"Source directory {source_full_path} does not exist.")
                 return
 
-            # If extension is not specified, recover both files and directories
+            # Recovery logic
             if extension is None:
                 # Traverse through all files and directories in source_dir
-                for root, dirs, files in os.walk(source_dir):
+                for root, dirs, files in os.walk(source_full_path):
                     # Recover directories
                     for dir_name in dirs:
                         dir_path = os.path.join(root, dir_name)
-                        relative_dir_path = os.path.relpath(dir_path, source_dir)
-                        target_dir_path = os.path.join(target_dir, relative_dir_path)
+                        relative_dir_path = os.path.relpath(dir_path, source_full_path)
+                        target_dir_path = os.path.join(recovery_directory, relative_dir_path)
 
-                        # Create the directory if it doesn't exist in the target
+                        # Create the directory if it doesn't exist in the recovery directory
                         if not os.path.exists(target_dir_path):
                             os.makedirs(target_dir_path)
                             print(Fore.GREEN + f"Recovered directory: {target_dir_path}")
@@ -292,29 +331,30 @@ class FRECE:
                     # Recover files
                     for file_name in files:
                         file_path = os.path.join(root, file_name)
-                        relative_file_path = os.path.relpath(file_path, source_dir)
-                        target_file_path = os.path.join(target_dir, relative_file_path)
+                        relative_file_path = os.path.relpath(file_path, source_full_path)
+                        target_file_path = os.path.join(recovery_directory, relative_file_path)
 
-                        # Ensure the parent directory exists in the target before copying the file
+                        # Ensure the parent directory exists in the recovery directory before copying the file
                         os.makedirs(os.path.dirname(target_file_path), exist_ok=True)
                         shutil.copy(file_path, target_file_path)
                         print(Fore.GREEN + f"Recovered file: {target_file_path}")
 
             else:
                 # If an extension is specified, recover only matching files
-                for root, dirs, files in os.walk(source_dir):
+                for root, dirs, files in os.walk(source_full_path):
                     for file_name in files:
                         if file_name.endswith(extension):
                             file_path = os.path.join(root, file_name)
-                            relative_file_path = os.path.relpath(file_path, source_dir)
-                            target_file_path = os.path.join(target_dir, relative_file_path)
+                            relative_file_path = os.path.relpath(file_path, source_full_path)
+                            target_file_path = os.path.join(recovery_directory, relative_file_path)
 
-                            # Ensure the parent directory exists in the target before copying the file
+                            # Ensure the parent directory exists in the recovery directory before copying the file
                             os.makedirs(os.path.dirname(target_file_path), exist_ok=True)
                             shutil.copy(file_path, target_file_path)
                             print(Fore.GREEN + f"Recovered file: {target_file_path}")
 
             print(Fore.GREEN + "Recovery completed successfully!")
+            print(Fore.GREEN + f"Check the recovered files at: {recovery_directory}")
 
         except Exception as e:
             print(Fore.RED + f"Error during recovery: {e}")
@@ -410,8 +450,8 @@ class FRECE:
         try:
             # Default to a directory on the Desktop if none is provided
             if not directory:
-                desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-                recovery_folder_name = "FRECE_Recovered"
+                desktop = os.path.join(os.path.expanduser("~"), "Desktop","frece_repo")
+                recovery_folder_name = "frece_repo"
                 directory = os.path.join(desktop, recovery_folder_name)
 
             # Ensure the directory exists, or reuse it if already present
