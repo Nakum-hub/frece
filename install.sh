@@ -105,37 +105,40 @@ REPO_DIR="$FRECE_DIR/REPO_DIR/subfolder"  # Directory where the repository will 
 HUNTER_TOOL="hunter"  # New symbolic name for TestDisk
 SLAYER_TOOL="slayer"  # New symbolic name for PhotoRec
 
-# Function to create directories
 
+# Function to create necessary directories
 create_directories() {
-    # Ensure that the REPO_DIR exists
+    if [ ! -d "$FRECE_DIR" ]; then
+        mkdir -p "$FRECE_DIR"
+        echo "Created FRECE directory: $FRECE_DIR"
+    fi
+
     if [ ! -d "$REPO_DIR" ]; then
-        echo "Creating the REPO_DIR directory..."
-        mkdir -p "$REPO_DIR" || {
-            echo "Failed to create REPO_DIR directory. Exiting."
-            exit 1
-        }
+        mkdir -p "$REPO_DIR"
+        echo "Created repository directory: $REPO_DIR"
     fi
 }
 
-
-# Install or update functionality
-
-
+# Update functionality
 if [ "$1" == "--update" ]; then
-    create_directories  # Ensure the directories are created if updating
+    create_directories  # Ensure necessary directories exist
 
-    # Update functionality
     if [ -d "$REPO_DIR" ]; then
         echo "Updating the tool..."
         cd "$REPO_DIR"
 
-        # Pull the latest changes from the repository
+        # Attempt to stash changes if there are local modifications
+        git stash save "Temporary stash before pulling updates" &>/dev/null
+
+        # Pull the latest changes
         git pull || {
             echo "Failed to pull updates. Please check your network connection."
             exit 1
         }
 
+        # Ensure the tool is updated in the install directory
+        cp "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
+        chmod +x "$INSTALL_DIR/$TOOL_NAME"
         echo "Tool updated successfully!"
     else
         echo "Tool not installed. Please install it first."
@@ -143,6 +146,39 @@ if [ "$1" == "--update" ]; then
 
     exit 0
 fi
+
+# Compatibility for alternate 'update frece' syntax
+if [ "$1" == "update" ] && [ "$2" == "$TOOL_NAME" ]; then
+    create_directories  # Ensure necessary directories exist
+
+    if [ -d "$REPO_DIR" ]; then
+        echo "Updating frece tool..."
+        cd "$REPO_DIR"
+
+        # Attempt to stash changes if there are local modifications
+        git stash save "Temporary stash before pulling updates" &>/dev/null
+
+        # Pull the latest changes
+        git pull || {
+            echo "Failed to pull updates for frece. Please check your network connection."
+            exit 1
+        }
+
+        # Ensure the tool is updated in the install directory
+        cp "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
+        chmod +x "$INSTALL_DIR/$TOOL_NAME"
+        echo "frece tool updated successfully!"
+    else
+        echo "Installation directory not found. Please install the tool first."
+    fi
+
+    exit 0
+fi
+
+# Default installation steps (add here if needed for regular installation)
+echo "Invalid option. Use '--update' or 'update frece' to update the tool."
+exit 1
+
 
 # Check if the tool already exists in the installation directory
 
@@ -163,32 +199,6 @@ fi
 if ! command -v python3 &> /dev/null; then
     echo "Python 3 is not installed. Please install Python 3 and rerun the script."
     exit 1
-fi
-
-# Additional update functionality for frece tool
-
-if [ "$1" == "update" ] && [ "$2" == "$TOOL_NAME" ]; then
-    if [ -d "$REPO_DIR" ]; then
-        echo "Updating frece tool..."
-        cd "$REPO_DIR"
-
-# Attempt to stash changes if there are any
-git stash save "Temporary stash before pulling updates"
-
-
-        git pull || {
-            echo "Failed to pull updates for frece. Please check your network connection."
-            exit 1
-        }
-
-        cp "$REPO_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$TOOL_NAME"
-        chmod +x "$INSTALL_DIR/$TOOL_NAME"
-        echo "frece tool updated successfully!"
-    else
-        echo "Installation directory not found. Please install the tool first."
-    fi
-
-    exit 0
 fi
 
 # Install required recovery tools (TestDisk and PhotoRec)

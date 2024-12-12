@@ -76,11 +76,44 @@ class FRECE:
     FRECE (File Recovery Enhanced Command-line Environment) is the core class
     containing the primary functionality for file scanning, recovery, and tool integration.
     """
+
+    INSTALL_DIR = "/usr/local/bin"  # Default installation directory
+    TOOL_NAME = "frece"  # Main tool name for installation
+    SCRIPT_NAME = "frece.py"  # Name of the Python script
+    VENV_DIR = os.path.expanduser("~/frece_venv")  # Virtual environment location
+    FRECE_DIR = "/home/kali/frece"  # Installation directory for the tool
+    REPO_DIR = os.path.join(FRECE_DIR, "REPO_DIR/subfolder")  # Directory where the repository is cloned
+
+    def create_directories(self):
+        """Ensure necessary directories exist."""
+        if not os.path.exists(self.REPO_DIR):
+            os.makedirs(self.REPO_DIR, exist_ok=True)
+            print(Fore.GREEN + f"Created repository directory: {self.REPO_DIR}")
+
+    def update_tool(self):
+        """Update the tool from the GitHub repository."""
+        try:
+            self.create_directories()  # Ensure REPO_DIR exists
+
+            # Check if the repository exists and update it
+            if os.path.exists(self.REPO_DIR):
+                print(Fore.GREEN + "Updating the tool...")
+                os.chdir(self.REPO_DIR)
+                subprocess.run(["git", "pull", "origin", "main"], check=True)
+                print(Fore.GREEN + "Tool updated successfully!")
+            else:
+                print(Fore.RED + f"Repository not found at {self.REPO_DIR}. Please reinstall the tool.")
+        except subprocess.CalledProcessError as e:
+            print(Fore.RED + f"Git update failed: {e}")
+        except Exception as e:
+            print(Fore.RED + f"An error occurred during the update process: {e}")
+
+
     def __init__(self):
         self.version = "FRECE v1.0"
         self.setup_tab_completion()
         # Set the path where the repo will be located on the Desktop
-        self.REPO_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "frece_repo")
+        self.REPO_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_files")
 
     def scan_directory(self, directory, extension=None):
         # Expand to user home directory
@@ -232,17 +265,23 @@ class FRECE:
             print("Tab completion is not supported on this platform.")
 
 
-    def recover_files(self, source_dir, target_dir, extension=None):
+    def recover_files(self, source_dir, target_dir=None, extension=None):
         """
         Recovers files and directories from the source directory to the target directory.
 
         Args:
             source_dir (str): Path to the source directory.
-            target_dir (str): Path to the target directory.
+            target_dir (str, optional): Path to the target directory.
             extension (str, optional): File extension to filter files. Recovers all files if not specified.
         """
         try:
-            print(Fore.GREEN + f"Starting recovery from {source_dir} to {target_dir}...")
+            # Expand user directory if necessary
+            source_dir = os.path.expanduser(source_dir)
+            if target_dir:
+                target_dir = os.path.expanduser(target_dir)
+            else:
+                # Default to the directory where hunter and slayer will store recovered files
+                target_dir = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_files")
 
             # Create the target directory if it doesn't exist
             if not os.path.exists(target_dir):
@@ -254,50 +293,64 @@ class FRECE:
                 print(Fore.RED + f"Source directory {source_dir} does not exist.")
                 return
 
-            # If extension is not specified, recover both files and directories
-            if extension is None:
-                # Traverse through all files and directories in source_dir
-                for root, dirs, files in os.walk(source_dir):
-                    # Recover directories
-                    for dir_name in dirs:
-                        dir_path = os.path.join(root, dir_name)
-                        relative_dir_path = os.path.relpath(dir_path, source_dir)
-                        target_dir_path = os.path.join(target_dir, relative_dir_path)
+            # Analyze the source directory and check for file/folder existence
+            if extension != 'null':
+                if extension:  # If extension is specified, process it
+                    # Recover files with the specified extension
+                    for root, dirs, files in os.walk(source_dir):
+                        for file_name in files:
+                            if file_name.endswith(extension):
+                                file_path = os.path.join(root, file_name)
+                                relative_file_path = os.path.relpath(file_path, source_dir)
+                                target_file_path = os.path.join(target_dir, relative_file_path)
+                                os.makedirs(os.path.dirname(target_file_path), exist_ok=True)
+                                shutil.copy(file_path, target_file_path)
+                                print(Fore.GREEN + f"Recovered file: {target_file_path}")
 
-                        # Create the directory if it doesn't exist in the target
-                        if not os.path.exists(target_dir_path):
-                            os.makedirs(target_dir_path)
+                else:  # If extension is null, recover all files
+                    # Traverse through all files and directories in source_dir
+                    for root, dirs, files in os.walk(source_dir):
+                        # Recover directories
+                        for dir_name in dirs:
+                            dir_path = os.path.join(root, dir_name)
+                            relative_dir_path = os.path.relpath(dir_path, source_dir)
+                            target_dir_path = os.path.join(target_dir, relative_dir_path)
+                            os.makedirs(target_dir_path, exist_ok=True)
                             print(Fore.GREEN + f"Recovered directory: {target_dir_path}")
 
-                    # Recover files
-                    for file_name in files:
-                        file_path = os.path.join(root, file_name)
-                        relative_file_path = os.path.relpath(file_path, source_dir)
-                        target_file_path = os.path.join(target_dir, relative_file_path)
-
-                        # Ensure the parent directory exists in the target before copying the file
-                        os.makedirs(os.path.dirname(target_file_path), exist_ok=True)
-                        shutil.copy(file_path, target_file_path)
-                        print(Fore.GREEN + f"Recovered file: {target_file_path}")
-
-            else:
-                # If an extension is specified, recover only matching files
-                for root, dirs, files in os.walk(source_dir):
-                    for file_name in files:
-                        if file_name.endswith(extension):
+                        # Recover files
+                        for file_name in files:
                             file_path = os.path.join(root, file_name)
                             relative_file_path = os.path.relpath(file_path, source_dir)
                             target_file_path = os.path.join(target_dir, relative_file_path)
-
-                            # Ensure the parent directory exists in the target before copying the file
                             os.makedirs(os.path.dirname(target_file_path), exist_ok=True)
                             shutil.copy(file_path, target_file_path)
                             print(Fore.GREEN + f"Recovered file: {target_file_path}")
+
+            else:  # If no extension, recover files and directories matching the name
+                # Recover files and directories with the name given in the filename
+                for root, dirs, files in os.walk(source_dir):
+                    for file_name in files + dirs:
+                        # Check if the file or directory matches the given name (without extension)
+                        if file_name == extension:
+                            full_path = os.path.join(root, file_name)
+                            relative_path = os.path.relpath(full_path, source_dir)
+                            target_path = os.path.join(target_dir, relative_path)
+
+                            # Recover directories
+                            if os.path.isdir(full_path):
+                                os.makedirs(target_path, exist_ok=True)
+                                print(Fore.GREEN + f"Recovered directory: {target_path}")
+                            else:
+                                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                                shutil.copy(full_path, target_path)
+                                print(Fore.GREEN + f"Recovered file: {target_path}")
 
             print(Fore.GREEN + "Recovery completed successfully!")
 
         except Exception as e:
             print(Fore.RED + f"Error during recovery: {e}")
+        
 
     def get_installed_tool_path(self, tool_name):
             """
@@ -318,110 +371,164 @@ class FRECE:
             except subprocess.CalledProcessError:
                 return None
 
-    def run_hunter(self):  # Renamed method for TestDisk
+    def run_hunter(self):  # Enhanced for identifying and highlighting deleted files
         print(f"Running {self.hunter_tool}...")
+
         try:
-            # Ensure the recovery directory exists
+            # Set default recovery directory on the desktop
+            desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+            self.recovery_directory = os.path.join(desktop_dir, "Recovered_Files")
+
+            # Ensure the default recovery directory exists
             if not os.path.exists(self.recovery_directory):
                 os.makedirs(self.recovery_directory)
                 print(Fore.GREEN + f"Created recovery directory: {self.recovery_directory}")
 
-            # Run the tool with sudo
+            # Display guidance for Hunter usage
+            print(Fore.CYAN + "Starting Hunter in recovery mode...")
+            print(Fore.YELLOW + "Follow these steps in Hunter to recover permanently deleted files:")
+            print("1. Select the appropriate disk where the file was stored.")
+            print("2. Choose your partition table type (or accept the default).")
+            print("3. Select 'Advanced' for file system utilities.")
+            print("4. Navigate to the directory or perform a deeper search.")
+            print("5. Use 'Undelete' to recover deleted files.")
+            print("6. If the file isn't listed, try 'Analyse' and perform a deeper search to scan unallocated space for the file.")
+
+            # Run the Hunter tool (formerly TestDisk)
+            log_file = os.path.join(self.recovery_directory, "hunter.log")
             subprocess.run(["sudo", "/usr/bin/testdisk", "/log"], cwd=self.recovery_directory, check=True)
-            print(Fore.GREEN + f"{self.hunter_tool} completed successfully!")
+
+            # Rename the log file to hunter.log if it is created with the original name
+            testdisk_log_file = os.path.join(self.recovery_directory, "testdisk.log")
+            if os.path.exists(testdisk_log_file):
+                os.rename(testdisk_log_file, log_file)
+                print(Fore.GREEN + "Log file renamed to hunter.log.")
+
+            # Replace all references to "testdisk" in the log file content with "hunter"
+            if os.path.exists(log_file):
+                print(Fore.GREEN + "Processing Hunter log to replace references to 'testdisk' with 'hunter'...")
+                with open(log_file, 'r') as log:
+                    content = log.read()
+
+                updated_content = content.replace("testdisk", "hunter")
+
+                with open(log_file, 'w') as log:
+                    log.write(updated_content)
+                print(Fore.GREEN + "References in the log file updated successfully.")
+
+            # Parse the log file to find deleted files
+            if os.path.exists(log_file):
+                print(Fore.GREEN + "Parsing Hunter log to identify deleted files...")
+                with open(log_file, 'r') as log:
+                    for line in log:
+                        if "Deleted" in line:  # Adjust based on actual Hunter output
+                            print(Fore.RED + f"Deleted file identified: {line.strip()}")
+            else:
+                print(Fore.YELLOW + "Log file not found. Unable to highlight deleted files.")
+
+            print(Fore.GREEN + f"{self.hunter_tool} completed successfully! All recovered files are saved in: {self.recovery_directory}")
+
+            # Explicitly print the recovery path as a message
+            print(Fore.CYAN + f"Recovered files are available at: {self.recovery_directory}")
 
         except FileNotFoundError:
             print(Fore.RED + f"{self.hunter_tool} executable not found. Ensure it is correctly installed and accessible.")
         except subprocess.CalledProcessError as cpe:
             print(Fore.RED + f"{self.hunter_tool} encountered an error: {cpe}")
         except PermissionError:
-            print(Fore.RED + "Permission denied while accessing the recovery directory.")
+            print(Fore.RED + f"Permission denied while accessing the recovery directory for {self.hunter_tool}.")
         except Exception as e:
             print(Fore.RED + f"An unexpected error occurred while running {self.hunter_tool}: {e}")
 
-    def run_slayer(self):  # Renamed method for PhotoRec
+
+
+    def run_slayer(self):  # Enhanced for more comprehensive recovery
         print(f"Running {self.slayer_tool}...")
+
         try:
+            # Use the same recovery directory as Hunter
+            desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+            self.recovery_directory = os.path.join(desktop_dir, "Recovered_Files")
+            
             # Ensure the recovery directory exists
             if not os.path.exists(self.recovery_directory):
                 os.makedirs(self.recovery_directory)
                 print(Fore.GREEN + f"Created recovery directory: {self.recovery_directory}")
 
-            # Run the tool
-            subprocess.run(["/usr/bin/photorec"], cwd=self.recovery_directory, check=True)
-            print(Fore.GREEN + f"{self.slayer_tool} completed successfully!")
+            # Step 1: Run PhotoRec
+            print(Fore.CYAN + "Starting PhotoRec for file recovery...")
+            photorec_log_file = os.path.join(self.recovery_directory, "slayer_photorec.log")
+            subprocess.run(
+                ["sudo", "/usr/bin/photorec", "/log"], 
+                cwd=self.recovery_directory, 
+                check=True
+            )
+
+            # Rename and process PhotoRec log file
+            original_photorec_log = os.path.join(self.recovery_directory, "photorec.log")
+            if os.path.exists(original_photorec_log):
+                os.rename(original_photorec_log, photorec_log_file)
+                print(Fore.GREEN + "PhotoRec log file renamed to slayer_photorec.log.")
+
+            # Process log file to update references
+            if os.path.exists(photorec_log_file):
+                print(Fore.GREEN + "Processing PhotoRec log file to replace references to 'photorec' with 'slayer'...")
+                with open(photorec_log_file, 'r') as log:
+                    content = log.read()
+
+                updated_content = content.replace("photorec", "slayer")
+
+                with open(photorec_log_file, 'w') as log:
+                    log.write(updated_content)
+                print(Fore.GREEN + "References in the log file updated successfully.")
+
+            # Parse the log file to identify deleted files
+            if os.path.exists(photorec_log_file):
+                print(Fore.GREEN + "Parsing Slayer log to identify deleted files...")
+                with open(photorec_log_file, 'r') as log:
+                    for line in log:
+                        if "Deleted" in line:  # Adjust based on actual log output
+                            print(Fore.RED + f"Deleted file identified: {line.strip()}")
+            else:
+                print(Fore.YELLOW + "Log file not found. Unable to highlight deleted files.")
+
+            print(Fore.GREEN + f"{self.slayer_tool} completed successfully with PhotoRec!")
+
+            # Step 2: Add raw disk scanning (e.g., with foremost)
+            print(Fore.CYAN + "Initiating raw disk scan for permanently deleted files...")
+            raw_disk_tool = "/usr/bin/foremost"  # Example alternative tool for raw scans
+            foremost_log_file = os.path.join(self.recovery_directory, "slayer_foremost.log")
+            if os.path.exists(raw_disk_tool):
+                subprocess.run(
+                    [raw_disk_tool, "-t", "all", "-o", self.recovery_directory, "/dev/sdX"],
+                    check=True
+                )
+                print(Fore.GREEN + "Raw disk scan completed successfully!")
+
+                # Check for output log and rename for consistency
+                if os.path.exists(os.path.join(self.recovery_directory, "foremost.log")):
+                    os.rename(
+                        os.path.join(self.recovery_directory, "foremost.log"), 
+                        foremost_log_file
+                    )
+                    print(Fore.GREEN + "Foremost log file renamed to slayer_foremost.log.")
+            else:
+                print(Fore.YELLOW + "Raw disk scanning tool not found. Skipping this step.")
+
+            # Explicit recovery path message
+            print(Fore.CYAN + f"Recovered files are available at: {self.recovery_directory}")
 
         except FileNotFoundError:
-            print(Fore.RED + f"{self.slayer_tool} not found. Please ensure it is correctly installed.")
+            print(Fore.RED + f"{self.slayer_tool} or raw scanning tool not found. "
+                            "Please ensure they are correctly installed.")
         except subprocess.CalledProcessError as cpe:
-            print(Fore.RED + f"{self.slayer_tool} encountered an error while executing: {cpe}")
+            print(Fore.RED + f"{self.slayer_tool} or raw scanning tool encountered an error: {cpe}")
         except PermissionError:
-            print(Fore.RED + "Permission denied while accessing the recovery directory. "
+            print(Fore.RED + "Permission denied while accessing the recovery directory or disk. "
                             "Ensure you have the required permissions.")
         except Exception as e:
             print(Fore.RED + f"An unexpected error occurred while running {self.slayer_tool}: {e}")
 
-    def create_directories(self):
-        # Ensure that the REPO_DIR exists
-        if not os.path.exists(self.REPO_DIR):
-            print(Fore.GREEN + "Creating the REPO_DIR directory...")
-            os.makedirs(self.REPO_DIR, exist_ok=True)
-
-
-    def update_tool(self):
-        try:
-            self.create_directories()  # Ensure REPO_DIR exists
-
-            # Update repository if it exists
-            if os.path.exists(self.REPO_DIR):
-                print(Fore.GREEN + "Updating the tool...")
-                os.chdir(self.REPO_DIR)
-                subprocess.run(["git", "pull"], check=True)
-                print(Fore.GREEN + "Tool updated successfully!")
-            else:
-                print(Fore.RED + "Tool not installed. Please install it first.")
-        except Exception as e:
-            print(Fore.RED + f"An error occurred during update: {e}")
-
-
-    def save_recovery(self, directory=None):
-        """
-        Saves recovered files to a specified directory or reuses an existing directory on the Desktop for recovered files.
-        """
-        try:
-            # Default to a directory on the Desktop if none is provided
-            if not directory:
-                desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-                recovery_folder_name = "FRECE_Recovered"
-                directory = os.path.join(desktop, recovery_folder_name)
-
-            # Ensure the directory exists, or reuse it if already present
-            if not os.path.exists(directory):
-                os.makedirs(directory)
-                print(Fore.GREEN + f"Directory '{directory}' created for recovered files.")
-            else:
-                print(Fore.YELLOW + f"Using existing directory: {directory}")
-
-            print(Fore.GREEN + f"Saving recovered files to {directory}...")
-
-            # Check if the recovery directory exists and has files to save
-            if os.path.exists(RECOVERY_DIR) and os.listdir(RECOVERY_DIR):
-                # Copy files from the RECOVERY_DIR to the specified directory
-                for file in os.listdir(RECOVERY_DIR):
-                    source_file = os.path.join(RECOVERY_DIR, file)
-                    destination_file = os.path.join(directory, file)
-
-                    # Ensure the destination directory exists before copying
-                    os.makedirs(os.path.dirname(destination_file), exist_ok=True)
-                    shutil.copy(source_file, destination_file)
-                    print(Fore.GREEN + f"Recovered file saved: {destination_file}")
-
-                print(Fore.GREEN + f"Files saved successfully to {directory}.")
-            else:
-                print(Fore.YELLOW + "No files found in the recovery directory to save.")
-
-        except Exception as e:
-            print(Fore.RED + f"Error saving files: {e}")
 
     def show_help(self):
         """
@@ -512,38 +619,71 @@ class FRECE:
 
                 if command.startswith("recover"):
                     command_parts = command.split()
-                    if len(command_parts) == 3:  # source, target
+                    if len(command_parts) == 3:  # source_dir and target_dir
                         _, source, target = command_parts
-                        
+
                         # Validate source and target directories
+                        source = os.path.expanduser(source)
+                        target = os.path.expanduser(target)
+
                         if not os.path.exists(source):
                             print(Fore.RED + f"Source directory {source} does not exist.")
-                        elif not os.path.exists(target):
-                            print(Fore.RED + f"Target directory {target} does not exist. Creating it now.")
-                            os.makedirs(target, exist_ok=True)
-                            print(Fore.GREEN + f"Created target directory: {target}")
-                        
                         else:
+                            # Create target directory if not exists
+                            if not os.path.exists(target):
+                                print(Fore.RED + f"Target directory {target} does not exist. Creating it now.")
+                                os.makedirs(target, exist_ok=True)
+                                print(Fore.GREEN + f"Created target directory: {target}")
+
                             print(Fore.GREEN + f"Recovering all files and directories from {source} to {target}...")
                             self.recover_files(source, target)  # Recover both files and directories
 
-                    elif len(command_parts) == 4:  # source, extension, target
+                    elif len(command_parts) == 4:  # source_dir, extension, and target_dir
                         _, source, extension, target = command_parts
-                        
+
                         # Validate source and target directories
+                        source = os.path.expanduser(source)
+                        target = os.path.expanduser(target)
+
                         if not os.path.exists(source):
                             print(Fore.RED + f"Source directory {source} does not exist.")
-                        elif not os.path.exists(target):
-                            print(Fore.RED + f"Target directory {target} does not exist. Creating it now.")
-                            os.makedirs(target, exist_ok=True)
-                            print(Fore.GREEN + f"Created target directory: {target}")
-                        
                         else:
+                            # Create target directory if not exists
+                            if not os.path.exists(target):
+                                print(Fore.RED + f"Target directory {target} does not exist. Creating it now.")
+                                os.makedirs(target, exist_ok=True)
+                                print(Fore.GREEN + f"Created target directory: {target}")
+
                             print(Fore.GREEN + f"Recovering files with extension {extension} from {source} to {target}...")
-                            self.recover_files(source, target, extension)  # Recover files with a specified extension
+                            self.recover_files(source, target, extension)  # Recover files with the specified extension
+
+                    elif len(command_parts) == 2:  # source_dir and extension ('null' or a file name)
+                        _, source, extension = command_parts
+
+                        # Validate source directory
+                        source = os.path.expanduser(source)
+                        if not os.path.exists(source):
+                            print(Fore.RED + f"Source directory {source} does not exist.")
+                        else:
+                            # Check if extension is 'null' or specific filename
+                            if extension == 'null':
+                                print(Fore.GREEN + f"Recovering all files and directories from {source}...")
+                                self.recover_files(source, target_dir=None, extension='null')  # Recover all files and directories
+                            else:
+                                print(Fore.GREEN + f"Recovering files or directories with name {extension} from {source}...")
+                                self.recover_files(source, target_dir=None, extension=extension)  # Recover specific files/folders
 
                     else:
                         print(Fore.RED + "Invalid number of arguments. Usage: recover <source_dir> [extension] <target_dir>")
+
+                elif command.startswith("save"):
+                    parts = command.split(maxsplit=1)
+                    if len(parts) == 2:
+                        directory = parts[1]
+                        self.save_recovery(directory)  # Save the recovered files to the specified directory
+                    else:
+                        print(Fore.RED + "Usage: save <directory>")
+        
 
                 elif command.startswith("scan"):
                     parts = command.split(maxsplit=2)  # Split the command into parts
@@ -590,7 +730,9 @@ class FRECE:
                 elif command == 'hunter':  # Command for TestDisk
                     try:
                         # Define the recovery directory
-                        recovery_directory = os.path.abspath(os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files"))
+                        recovery_directory = os.path.abspath(
+                            os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                        )
 
                         # Ensure the recovery directory exists
                         if not os.path.exists(recovery_directory):
@@ -603,7 +745,13 @@ class FRECE:
                         print(f"Debug: Running Hunter with recovery directory: {recovery_directory}")
 
                         # Run Hunter with sudo (TestDisk)
-                        subprocess.run(["sudo", "/usr/bin/testdisk", "/log"], cwd=recovery_directory, check=True)
+                        testdisk_path = "/usr/bin/testdisk"  # Path to TestDisk
+
+                        # Verify if TestDisk exists and is executable
+                        if not os.path.isfile(testdisk_path) or not os.access(testdisk_path, os.X_OK):
+                            raise FileNotFoundError("Hunter executable not found or is not executable.")
+
+                        subprocess.run(["sudo", testdisk_path, "/log"], cwd=recovery_directory, check=True)
                         print(Fore.GREEN + "Hunter completed successfully!")
 
                     except FileNotFoundError:
@@ -617,8 +765,10 @@ class FRECE:
 
                 elif command == 'slayer':  # Command for PhotoRec
                     try:
-                        # Define the recovery directory path
-                        recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                        # Define the recovery directory
+                        recovery_directory = os.path.abspath(
+                            os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+                        )
 
                         # Ensure the recovery directory exists
                         if not os.path.exists(recovery_directory):
@@ -629,14 +779,14 @@ class FRECE:
 
                         # Run Slayer (PhotoRec)
                         print(Fore.CYAN + "Launching Slayer ...")
-                        photorec_path = "/usr/bin/photorec"  # Adjust if PhotoRec is installed in a different location
+                        photorec_path = "/usr/bin/photorec"  # Path to PhotoRec
 
                         # Verify if PhotoRec exists and is executable
                         if not os.path.isfile(photorec_path) or not os.access(photorec_path, os.X_OK):
                             raise FileNotFoundError("Slayer executable not found or is not executable.")
 
                         # Execute PhotoRec with the recovery directory as the output directory
-                        subprocess.run([photorec_path], cwd=recovery_directory, check=True)
+                        subprocess.run(["sudo", photorec_path, "/log"], cwd=recovery_directory, check=True)
                         print(Fore.GREEN + "Slayer completed successfully!")
 
                     except FileNotFoundError as e:
@@ -649,13 +799,7 @@ class FRECE:
                         print(Fore.RED + f"An unexpected error occurred while running Slayer: {e}")
 
 
-                elif command.startswith("save"):
-                    parts = command.split(maxsplit=1)
-                    if len(parts) == 2:
-                        directory = parts[1]
-                        self.save_recovery(directory)  # Save the recovered files to the specified directory
-                    else:
-                        print(Fore.RED + "Usage: save <directory>")
+
 
                 elif command == "--version":
                     print(self.version)
@@ -690,6 +834,7 @@ class FRECE:
                     elif command == '--help':
                         self.show_help()  # Display help for all commands
 
+                    # Handle 'recover' command
                     elif command == 'recover':
                         if len(args) < 3:
                             print(Fore.RED + "Usage: recover <source_dir> <target_dir> [extension]")
@@ -697,6 +842,10 @@ class FRECE:
                             source = args[1]
                             target = args[2]
                             extension = args[3] if len(args) > 3 else None
+
+                            # Expand source and target paths (support shortened paths)
+                            source = os.path.expanduser(source)
+                            target = os.path.expanduser(target)
 
                             # Validate source directory existence
                             if not os.path.exists(source):
@@ -708,10 +857,10 @@ class FRECE:
                                 print(Fore.GREEN + f"Created target directory: {target}")
                             else:
                                 # Inform the user of the recovery operation
-                                if extension:
-                                    print(Fore.GREEN + f"Recovering files with extension '{extension}' from {source} to {target}...")
-                                else:
+                                if extension == 'null' or extension is None:
                                     print(Fore.GREEN + f"Recovering all files and directories from {source} to {target}...")
+                                else:
+                                    print(Fore.GREEN + f"Recovering files with extension '{extension}' from {source} to {target}...")
 
                                 # Call the recovery method
                                 self.recover_files(source, target, extension)
@@ -725,6 +874,31 @@ class FRECE:
                                 else:
                                     # If no extension is specified, simply inform the user about the recovery
                                     print(Fore.GREEN + f"Recovery from {source} to {target} completed.")
+                    
+                    # Handle 'save' command
+                    elif command == 'save':
+                        if len(args) < 2:
+                            print(Fore.RED + "Usage: save <directory>")
+                        else:
+                            directory = args[1]
+
+                            # Expand the directory path (support shortened paths)
+                            directory = os.path.expanduser(directory)
+
+                            # Check if the directory exists
+                            if not os.path.exists(directory):
+                                print(Fore.RED + f"Directory '{directory}' does not exist. Creating directory.")
+                                os.makedirs(directory, exist_ok=True)  # Create the directory if it doesn't exist
+                                print(Fore.GREEN + f"Created directory: {directory}")
+                            else:
+                                print(Fore.GREEN + f"Using existing directory: {directory}")
+
+                            # Attempt to save recovered files to the directory
+                            try:
+                                self.save_recovery(directory)
+                                print(Fore.GREEN + f"Files saved successfully to {directory}.")
+                            except Exception as e:
+                                print(Fore.RED + f"Error saving files: {e}")
 
                     elif command == 'scan':
                         if len(args) < 1:
@@ -746,9 +920,11 @@ class FRECE:
 
 
 
+                        """Main entry point for the tool."""
                     elif '--update' in args:
-                        self.update_tool()  # Method to handle updates
-        
+                        self.update_tool()
+                        return
+                        
                     elif command == 'list':
                         if len(args) < 2:
                             print(Fore.RED + "Usage: list <directory>")
@@ -794,13 +970,16 @@ class FRECE:
 
                             # Check if the script has root privileges
                             if os.geteuid() != 0:
-                                print(Fore.RED + "Hunter  requires root privileges to run. Please re-run the script with 'sudo'.")
+                                print(Fore.RED + "Hunter requires root privileges to run. Please re-run the script with 'sudo'.")
                                 return
 
                             # Run the Hunter process with sudo
                             print(Fore.CYAN + "Launching Hunter with elevated privileges...")
                             subprocess.run(["sudo", hunter_path, "/log"], cwd=recovery_directory, check=True)
                             print(Fore.GREEN + "Hunter completed successfully!")
+
+                            # Display recovery path
+                            print(Fore.CYAN + f"Recovered files are saved in: {recovery_directory}")
 
                         except FileNotFoundError:
                             print(Fore.RED + "Hunter executable not found. Please ensure it is installed and accessible. "
@@ -827,15 +1006,18 @@ class FRECE:
 
                             # Debugging info
                             print(Fore.CYAN + "Launching Slayer...")
-                            
+
                             # Validate the Slayer executable
                             slayer_path = "/usr/bin/photorec"
                             if not os.path.isfile(slayer_path) or not os.access(slayer_path, os.X_OK):
                                 raise FileNotFoundError("Slayer executable not found or is not executable.")
 
                             # Run the Slayer process
-                            subprocess.run([slayer_path], cwd=recovery_directory, check=True)
+                            subprocess.run([slayer_path, "/log"], cwd=recovery_directory, check=True)
                             print(Fore.GREEN + "Slayer completed successfully!")
+
+                            # Display recovery path
+                            print(Fore.CYAN + f"Recovered files are saved in: {recovery_directory}")
 
                         except FileNotFoundError:
                             print(Fore.RED + "Slayer executable not found. Please ensure it is installed and accessible. "
@@ -849,26 +1031,7 @@ class FRECE:
                             print(Fore.RED + f"An unexpected error occurred while running Slayer: {e}")
 
 
-                    elif command == 'save':
-                        if len(args) < 2:
-                            print(Fore.RED + "Usage: save <directory>")
-                        else:
-                            directory = args[1]
-                            
-                            # Check if the directory exists
-                            if not os.path.exists(directory):
-                                print(Fore.RED + f"Directory '{directory}' does not exist. Creating directory.")
-                                os.makedirs(directory, exist_ok=True)  # Create the directory if it doesn't exist
-                                print(Fore.GREEN + f"Created directory: {directory}")
-                            else:
-                                print(Fore.GREEN + f"Using existing directory: {directory}")
-                            
-                            # Attempt to save recovered files to the directory
-                            try:
-                                self.save_recovery(directory)
-                                print(Fore.GREEN + f"Files saved successfully to {directory}.")
-                            except Exception as e:
-                                print(Fore.RED + f"Error saving files: {e}")
+
 
                     else:
                         print(Fore.RED + "Invalid command. Type '--help' for usage.")
