@@ -195,10 +195,10 @@ fi
 
 echo "Installing required recovery tools..."
 
-# Function to check and install a specific tool
+# Function to check if a tool is installed and install it if not
 check_and_install_tool() {
-    local tool_name=\$1
-    if ! command -v "$tool_name" &> /dev/null; then
+    local tool_name="\$1"  # The argument passed to the function is assigned to tool_name
+    if ! dpkg -l | grep -qw "$tool_name"; then
         echo "The tool '$tool_name' is not installed. Installing now..."
         sudo apt update && sudo apt install -y "$tool_name"
         if [ $? -eq 0 ]; then
@@ -212,10 +212,10 @@ check_and_install_tool() {
     fi
 }
 
-# Check and install tools
+# Check and install required tools
 if [ "$(uname)" == "Linux" ]; then
-    check_and_install_tool "testdisk"  # For Hunter
-    check_and_install_tool "photorec" # For Slayer
+    check_and_install_tool "testdisk"  # Tool for Hunter functionality
+    check_and_install_tool "photorec" # Tool for Slayer functionality
     check_and_install_tool "foremost" # Additional recovery tool for file carving
 else
     echo "Unsupported OS. Please manually install testdisk, photorec, and foremost recovery tools."
