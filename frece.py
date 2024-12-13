@@ -20,8 +20,8 @@ if sys.platform == "win32":
         import pyreadline as readline  # For command history on Windows
     except ImportError:
         print("pyreadline not found, running without command history.")
-else:
-    import readline  # For command history on Unix-based systems
+    else:
+        import readline  # For command history on Unix-based systems
 
 # Initialize colorama for terminal colors
 init(autoreset=True)
@@ -371,15 +371,49 @@ class FRECE:
             except subprocess.CalledProcessError:
                 return None
 
+
+    # Add enhanced log file parsing
+    def parse_deleted_files(log_file):
+        """
+        Parse the log file to extract and display permanently deleted files.
+        """
+        try:
+            with open(log_file, 'r') as log:
+                print(Fore.GREEN + f"Parsing {log_file} for deleted files...")
+                for line in log:
+                    if "Deleted" in line or "Recoverable" in line:  # Adjust keywords based on log structure
+                        print(Fore.RED + f"Deleted file found: {line.strip()}")
+        except FileNotFoundError:
+            print(Fore.YELLOW + f"Log file {log_file} not found. Unable to parse deleted files.")
+        except Exception as e:
+            print(Fore.RED + f"Error while parsing {log_file}: {e}")
+
+    def run_foremost(recovery_directory):
+        """
+        Run Foremost for raw disk sector scanning and recovering deleted files.
+        """
+        foremost_path = "/usr/bin/foremost"
+        if not os.path.exists(foremost_path):
+            print(Fore.RED + "Foremost is not installed. Install it with 'sudo apt install foremost'.")
+            return
+
+        try:
+            print(Fore.CYAN + "Starting Foremost for deep recovery...")
+            subprocess.run([foremost_path, "-t", "all", "-o", recovery_directory, "/dev/sdX"], check=True)
+            print(Fore.GREEN + f"Foremost completed. Recovered files saved to: {recovery_directory}")
+        except Exception as e:
+            print(Fore.RED + f"Foremost encountered an error: {e}")
+
+
+
     def run_hunter(self):  # Enhanced for identifying and highlighting deleted files
         print(f"Running {self.hunter_tool}...")
 
         try:
-            # Set default recovery directory on the desktop
-            desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
-            self.recovery_directory = os.path.join(desktop_dir, "Recovered_Files")
+            # Use centralized recovery directory
+            self.recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
 
-            # Ensure the default recovery directory exists
+            # Ensure the recovery directory exists
             if not os.path.exists(self.recovery_directory):
                 os.makedirs(self.recovery_directory)
                 print(Fore.GREEN + f"Created recovery directory: {self.recovery_directory}")
@@ -421,10 +455,22 @@ class FRECE:
                 print(Fore.GREEN + "Parsing Hunter log to identify deleted files...")
                 with open(log_file, 'r') as log:
                     for line in log:
-                        if "Deleted" in line:  # Adjust based on actual Hunter output
+                        if "Deleted" in line:
                             print(Fore.RED + f"Deleted file identified: {line.strip()}")
             else:
                 print(Fore.YELLOW + "Log file not found. Unable to highlight deleted files.")
+
+            # Optional: Run Foremost for additional recovery
+            foremost_path = "/usr/bin/foremost"
+            if os.path.exists(foremost_path):
+                print(Fore.CYAN + "Running Foremost for deeper recovery...")
+                try:
+                    subprocess.run(["sudo", foremost_path, "-t", "all", "-o", self.recovery_directory, "/dev/sdX"], check=True)
+                    print(Fore.GREEN + "Foremost completed successfully. Additional files recovered.")
+                except Exception as e:
+                    print(Fore.RED + f"Foremost encountered an error: {e}")
+            else:
+                print(Fore.YELLOW + "Foremost is not installed. Skipping additional recovery.")
 
             print(Fore.GREEN + f"{self.hunter_tool} completed successfully! All recovered files are saved in: {self.recovery_directory}")
 
@@ -446,10 +492,9 @@ class FRECE:
         print(f"Running {self.slayer_tool}...")
 
         try:
-            # Use the same recovery directory as Hunter
-            desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
-            self.recovery_directory = os.path.join(desktop_dir, "Recovered_Files")
-            
+            # Use centralized recovery directory
+            self.recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
+
             # Ensure the recovery directory exists
             if not os.path.exists(self.recovery_directory):
                 os.makedirs(self.recovery_directory)
@@ -487,45 +532,43 @@ class FRECE:
                 print(Fore.GREEN + "Parsing Slayer log to identify deleted files...")
                 with open(photorec_log_file, 'r') as log:
                     for line in log:
-                        if "Deleted" in line:  # Adjust based on actual log output
+                        if "Deleted" in line:
                             print(Fore.RED + f"Deleted file identified: {line.strip()}")
             else:
                 print(Fore.YELLOW + "Log file not found. Unable to highlight deleted files.")
 
-            print(Fore.GREEN + f"{self.slayer_tool} completed successfully with PhotoRec!")
+            # Optional: Run Foremost for additional recovery
+            foremost_path = "/usr/bin/foremost"
+            if os.path.exists(foremost_path):
+                print(Fore.CYAN + "Running Foremost for deeper recovery...")
+                try:
+                    subprocess.run(["sudo", foremost_path, "-t", "all", "-o", self.recovery_directory, "/dev/sdX"], check=True)
+                    print(Fore.GREEN + "Foremost completed successfully. Additional files recovered.")
 
-            # Step 2: Add raw disk scanning (e.g., with foremost)
-            print(Fore.CYAN + "Initiating raw disk scan for permanently deleted files...")
-            raw_disk_tool = "/usr/bin/foremost"  # Example alternative tool for raw scans
-            foremost_log_file = os.path.join(self.recovery_directory, "slayer_foremost.log")
-            if os.path.exists(raw_disk_tool):
-                subprocess.run(
-                    [raw_disk_tool, "-t", "all", "-o", self.recovery_directory, "/dev/sdX"],
-                    check=True
-                )
-                print(Fore.GREEN + "Raw disk scan completed successfully!")
-
-                # Check for output log and rename for consistency
-                if os.path.exists(os.path.join(self.recovery_directory, "foremost.log")):
-                    os.rename(
-                        os.path.join(self.recovery_directory, "foremost.log"), 
-                        foremost_log_file
-                    )
-                    print(Fore.GREEN + "Foremost log file renamed to slayer_foremost.log.")
+                    # Check for output log and rename for consistency
+                    foremost_log_file = os.path.join(self.recovery_directory, "slayer_foremost.log")
+                    if os.path.exists(os.path.join(self.recovery_directory, "foremost.log")):
+                        os.rename(
+                            os.path.join(self.recovery_directory, "foremost.log"), 
+                            foremost_log_file
+                        )
+                        print(Fore.GREEN + "Foremost log file renamed to slayer_foremost.log.")
+                except Exception as e:
+                    print(Fore.RED + f"Foremost encountered an error: {e}")
             else:
-                print(Fore.YELLOW + "Raw disk scanning tool not found. Skipping this step.")
+                print(Fore.YELLOW + "Foremost is not installed. Skipping additional recovery.")
+
+            print(Fore.GREEN + f"{self.slayer_tool} completed successfully with PhotoRec!")
 
             # Explicit recovery path message
             print(Fore.CYAN + f"Recovered files are available at: {self.recovery_directory}")
 
         except FileNotFoundError:
-            print(Fore.RED + f"{self.slayer_tool} or raw scanning tool not found. "
-                            "Please ensure they are correctly installed.")
+            print(Fore.RED + f"{self.slayer_tool} executable not found. Ensure it is correctly installed.")
         except subprocess.CalledProcessError as cpe:
-            print(Fore.RED + f"{self.slayer_tool} or raw scanning tool encountered an error: {cpe}")
+            print(Fore.RED + f"{self.slayer_tool} encountered an error: {cpe}")
         except PermissionError:
-            print(Fore.RED + "Permission denied while accessing the recovery directory or disk. "
-                            "Ensure you have the required permissions.")
+            print(Fore.RED + "Permission denied while accessing the recovery directory or disk. Ensure you have the required permissions.")
         except Exception as e:
             print(Fore.RED + f"An unexpected error occurred while running {self.slayer_tool}: {e}")
 
@@ -754,6 +797,35 @@ class FRECE:
                         subprocess.run(["sudo", testdisk_path, "/log"], cwd=recovery_directory, check=True)
                         print(Fore.GREEN + "Hunter completed successfully!")
 
+                        # Process Hunter log
+                        log_file = os.path.join(recovery_directory, "hunter.log")
+                        testdisk_log_file = os.path.join(recovery_directory, "testdisk.log")
+                        if os.path.exists(testdisk_log_file):
+                            os.rename(testdisk_log_file, log_file)
+                            print(Fore.GREEN + "Log file renamed to hunter.log.")
+
+                        # Parse the log file to find deleted files
+                        if os.path.exists(log_file):
+                            print(Fore.GREEN + "Parsing Hunter log to identify deleted files...")
+                            with open(log_file, 'r') as log:
+                                for line in log:
+                                    if "Deleted" in line:
+                                        print(Fore.RED + f"Deleted file identified: {line.strip()}")
+                        else:
+                            print(Fore.YELLOW + "Log file not found. Unable to highlight deleted files.")
+
+                        # Optional: Run Foremost for additional recovery
+                        foremost_path = "/usr/bin/foremost"
+                        if os.path.exists(foremost_path):
+                            print(Fore.CYAN + "Running Foremost for deeper recovery...")
+                            try:
+                                subprocess.run(["sudo", foremost_path, "-t", "all", "-o", recovery_directory, "/dev/sdX"], check=True)
+                                print(Fore.GREEN + "Foremost completed successfully. Additional files recovered.")
+                            except Exception as e:
+                                print(Fore.RED + f"Foremost encountered an error: {e}")
+                        else:
+                            print(Fore.YELLOW + "Foremost is not installed. Skipping additional recovery.")
+
                     except FileNotFoundError:
                         print(Fore.RED + "Hunter executable not found. Ensure it is correctly installed and accessible.")
                     except subprocess.CalledProcessError as cpe:
@@ -787,6 +859,45 @@ class FRECE:
 
                         # Execute PhotoRec with the recovery directory as the output directory
                         subprocess.run(["sudo", photorec_path, "/log"], cwd=recovery_directory, check=True)
+
+                        # Process Slayer log
+                        log_file = os.path.join(recovery_directory, "slayer_photorec.log")
+                        original_photorec_log = os.path.join(recovery_directory, "photorec.log")
+                        if os.path.exists(original_photorec_log):
+                            os.rename(original_photorec_log, log_file)
+                            print(Fore.GREEN + "PhotoRec log file renamed to slayer_photorec.log.")
+
+                        # Parse the log file to identify deleted files
+                        if os.path.exists(log_file):
+                            print(Fore.GREEN + "Parsing Slayer log to identify deleted files...")
+                            with open(log_file, 'r') as log:
+                                for line in log:
+                                    if "Deleted" in line:
+                                        print(Fore.RED + f"Deleted file identified: {line.strip()}")
+                        else:
+                            print(Fore.YELLOW + "Log file not found. Unable to highlight deleted files.")
+
+                        # Optional: Run Foremost for additional recovery
+                        foremost_path = "/usr/bin/foremost"
+                        if os.path.exists(foremost_path):
+                            print(Fore.CYAN + "Running Foremost for deeper recovery...")
+                            try:
+                                subprocess.run(["sudo", foremost_path, "-t", "all", "-o", recovery_directory, "/dev/sdX"], check=True)
+                                print(Fore.GREEN + "Foremost completed successfully. Additional files recovered.")
+
+                                # Check for output log and rename for consistency
+                                foremost_log_file = os.path.join(recovery_directory, "slayer_foremost.log")
+                                if os.path.exists(os.path.join(recovery_directory, "foremost.log")):
+                                    os.rename(
+                                        os.path.join(recovery_directory, "foremost.log"), 
+                                        foremost_log_file
+                                    )
+                                    print(Fore.GREEN + "Foremost log file renamed to slayer_foremost.log.")
+                            except Exception as e:
+                                print(Fore.RED + f"Foremost encountered an error: {e}")
+                        else:
+                            print(Fore.YELLOW + "Foremost is not installed. Skipping additional recovery.")
+
                         print(Fore.GREEN + "Slayer completed successfully!")
 
                     except FileNotFoundError as e:
@@ -952,51 +1063,50 @@ class FRECE:
                         try:
                             # Define the recovery directory path
                             recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-
+                            
                             # Ensure the recovery directory exists
                             if not os.path.exists(recovery_directory):
                                 os.makedirs(recovery_directory)
                                 print(Fore.GREEN + f"Created recovery directory: {recovery_directory}")
                             else:
                                 print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
-
-                            # Debugging info
-                            print(f"Debug: Checking Hunter executable and privileges...")
-
+                            
+                            # Debugging info for Hunter
+                            print(f"Debug: Checking {self.hunter_tool} executable and privileges...")
+                            
                             # Validate the Hunter executable
-                            hunter_path = "/usr/bin/testdisk"
+                            hunter_path = "/usr/bin/testdisk"  # System path for Hunter (TestDisk)
                             if not os.path.isfile(hunter_path) or not os.access(hunter_path, os.X_OK):
-                                raise FileNotFoundError("Hunter executable not found or is not executable.")
-
+                                raise FileNotFoundError(f"{self.hunter_tool} executable not found or is not executable.")
+                            
                             # Check if the script has root privileges
                             if os.geteuid() != 0:
-                                print(Fore.RED + "Hunter requires root privileges to run. Please re-run the script with 'sudo'.")
+                                print(Fore.RED + f"{self.hunter_tool} requires root privileges to run. Please re-run the script with 'sudo'.")
                                 return
-
-                            # Run the Hunter process with sudo
-                            print(Fore.CYAN + "Launching Hunter with elevated privileges...")
+                            
+                            # Run the Hunter process with root privileges
+                            print(Fore.CYAN + f"Launching {self.hunter_tool} with elevated privileges...")
                             subprocess.run(["sudo", hunter_path, "/log"], cwd=recovery_directory, check=True)
-                            print(Fore.GREEN + "Hunter completed successfully!")
-
-                            # Display recovery path
+                            print(Fore.GREEN + f"{self.hunter_tool} completed successfully!")
+                            
+                            # Display recovery folder info
                             print(Fore.CYAN + f"Recovered files are saved in: {recovery_directory}")
-
+                        
                         except FileNotFoundError:
-                            print(Fore.RED + "Hunter executable not found. Please ensure it is installed and accessible. "
+                            print(Fore.RED + f"{self.hunter_tool} executable not found. Please ensure it is installed and accessible. "
                                             "You can install it using: 'sudo apt install testdisk'")
                         except subprocess.CalledProcessError as cpe:
-                            print(Fore.RED + f"Hunter encountered an error while executing: {cpe}")
+                            print(Fore.RED + f"{self.hunter_tool} encountered an error while executing: {cpe}")
                         except PermissionError:
-                            print(Fore.RED + "Permission denied while accessing the recovery directory. "
-                                            "Ensure you have the required permissions.")
+                            print(Fore.RED + f"Permission denied while accessing the recovery directory for {self.hunter_tool}.")
                         except Exception as e:
-                            print(Fore.RED + f"An unexpected error occurred while running Hunter (TestDisk): {e}")
+                            print(Fore.RED + f"An unexpected error occurred while running {self.hunter_tool}: {e}")
 
                     elif command == 'slayer':  # Command for PhotoRec
                         try:
                             # Define the recovery directory path
                             recovery_directory = os.path.join(os.path.expanduser("~"), "Desktop", "Recovered_Files")
-
+                            
                             # Ensure the recovery directory exists
                             if not os.path.exists(recovery_directory):
                                 os.makedirs(recovery_directory)
@@ -1004,31 +1114,30 @@ class FRECE:
                             else:
                                 print(Fore.YELLOW + f"Using existing recovery directory: {recovery_directory}")
 
-                            # Debugging info
-                            print(Fore.CYAN + "Launching Slayer...")
+                            # Debugging info for Slayer
+                            print(Fore.CYAN + f"Launching {self.slayer_tool}...")
 
                             # Validate the Slayer executable
-                            slayer_path = "/usr/bin/photorec"
+                            slayer_path = "/usr/bin/photorec"  # System path for Slayer (PhotoRec)
                             if not os.path.isfile(slayer_path) or not os.access(slayer_path, os.X_OK):
-                                raise FileNotFoundError("Slayer executable not found or is not executable.")
-
+                                raise FileNotFoundError(f"{self.slayer_tool} executable not found or is not executable.")
+                            
                             # Run the Slayer process
                             subprocess.run([slayer_path, "/log"], cwd=recovery_directory, check=True)
-                            print(Fore.GREEN + "Slayer completed successfully!")
-
-                            # Display recovery path
+                            print(Fore.GREEN + f"{self.slayer_tool} completed successfully!")
+                            
+                            # Display recovery folder info
                             print(Fore.CYAN + f"Recovered files are saved in: {recovery_directory}")
-
+                        
                         except FileNotFoundError:
-                            print(Fore.RED + "Slayer executable not found. Please ensure it is installed and accessible. "
+                            print(Fore.RED + f"{self.slayer_tool} executable not found. Please ensure it is installed and accessible. "
                                             "You can install it using: 'sudo apt install photorec'")
                         except subprocess.CalledProcessError as cpe:
-                            print(Fore.RED + f"Slayer encountered an error while executing: {cpe}")
+                            print(Fore.RED + f"{self.slayer_tool} encountered an error while executing: {cpe}")
                         except PermissionError:
-                            print(Fore.RED + "Permission denied while accessing the recovery directory. "
-                                            "Ensure you have the required permissions.")
+                            print(Fore.RED + f"Permission denied while accessing the recovery directory for {self.slayer_tool}.")
                         except Exception as e:
-                            print(Fore.RED + f"An unexpected error occurred while running Slayer: {e}")
+                            print(Fore.RED + f"An unexpected error occurred while running {self.slayer_tool}: {e}")
 
 
 

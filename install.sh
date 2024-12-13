@@ -191,20 +191,35 @@ git stash save "Temporary stash before pulling updates"
     exit 0
 fi
 
-# Install required recovery tools (TestDisk and PhotoRec)
+# Install required recovery tools (TestDisk, PhotoRec, and Foremost)
 
 echo "Installing required recovery tools..."
 
-if ! command -v testdisk &> /dev/null || ! command -v photorec &> /dev/null; then
-    if [ "$(uname)" == "Linux" ]; then
-        sudo apt update && sudo apt install -y testdisk photorec || {
-            echo "Failed to install testdisk and photorec. Please install them manually."
+# Function to check and install a specific tool
+check_and_install_tool() {
+    local tool_name=\$1
+    if ! command -v "$tool_name" &> /dev/null; then
+        echo "The tool '$tool_name' is not installed. Installing now..."
+        sudo apt update && sudo apt install -y "$tool_name"
+        if [ $? -eq 0 ]; then
+            echo "The tool '$tool_name' was installed successfully."
+        else
+            echo "Failed to install the tool '$tool_name'. Please install it manually using: 'sudo apt install $tool_name'."
             exit 1
-        }
+        fi
     else
-        echo "Unsupported OS. Please install testdisk and photorec manually."
-        exit 1
+        echo "The tool '$tool_name' is already installed."
     fi
+}
+
+# Check and install tools
+if [ "$(uname)" == "Linux" ]; then
+    check_and_install_tool "testdisk"  # For Hunter
+    check_and_install_tool "photorec" # For Slayer
+    check_and_install_tool "foremost" # Additional recovery tool for file carving
+else
+    echo "Unsupported OS. Please manually install testdisk, photorec, and foremost recovery tools."
+    exit 1
 fi
 
 # Ensure the virtual environment uses the latest Python version
