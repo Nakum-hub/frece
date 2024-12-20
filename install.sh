@@ -191,13 +191,14 @@ git stash save "Temporary stash before pulling updates"
     exit 0
 fi
 
+
 # Install required recovery tools (TestDisk, PhotoRec, and Foremost)
 
 echo "Installing required recovery tools..."
 
-# Function to check if a tool is installed and install it if not
+# Function to check if a tool is installed and install it if missing
 check_and_install_tool() {
-    local tool_name="\$1"  # The argument passed to the function is assigned to tool_name
+    local tool_name=\$1  # Assign the tool name to a local variable
     if ! dpkg -l | grep -qw "$tool_name"; then
         echo "The tool '$tool_name' is not installed. Installing now..."
         sudo apt update && sudo apt install -y "$tool_name"
@@ -212,18 +213,61 @@ check_and_install_tool() {
     fi
 }
 
-# Check and install required tools
+
+# Check and install each required tool
 if [ "$(uname)" == "Linux" ]; then
-    check_and_install_tool "testdisk"  # Tool for Hunter functionality
-    check_and_install_tool "photorec" # Tool for Slayer functionality
-    check_and_install_tool "foremost" # Additional recovery tool for file carving
+    check_and_install_tool "testdisk"   # Essential for Hunter functionality
+    check_and_install_tool "photorec"  # Essential for Slayer functionality
+
+    # Attempt installation of foremost, handle cases where it is unavailable
+    if ! dpkg -l | grep -qw "foremost"; then
+        echo "The tool 'foremost' is not installed. Installing now..."
+        sudo apt update && sudo apt install -y "foremost"
+        if [ $? -ne 0 ]; then
+            echo "Failed to install 'foremost' through apt. Attempting alternative installation."
+            
+            # Attempt installation using alternative methods
+            if [ -f /usr/bin/foremost ]; then
+                echo "'foremost' seems to be installed but not registered properly. Tool is available at /usr/bin/foremost."
+            else
+                echo "Trying to install foremost from source..."
+                sudo apt install -y build-essential
+                wget http://foremost.sourceforge.net/foremost-1.5.7.tar.gz
+                tar -xvzf foremost-1.5.7.tar.gz
+                cd foremost-1.5.7
+
+                make
+                if [ $? -eq 0 ]; then
+                    sudo make install
+                    if [ $? -eq 0 ]; then
+                        echo "foremost was successfully installed from source."
+                    else
+                        echo "Failed to install foremost from source. Please install manually."
+                        exit 1
+                    fi
+                else
+                    echo "Error occurred during compilation. foremost could not be installed."
+                    exit 1
+                fi
+                cd ..
+                rm -r foremost-1.5.7 foremost-1.5.7.tar.gz
+            fi
+        else
+            echo "The tool 'foremost' was installed successfully."
+        fi
+    else
+        echo "The tool 'foremost' is already installed."
+    fi
 else
     echo "Unsupported OS. Please manually install testdisk, photorec, and foremost recovery tools."
     exit 1
 fi
 
-# Ensure the virtual environment uses the latest Python version
+echo "All required recovery tools are installed."
 
+echo "All required recovery tools are installed."
+
+# Ensure the virtual environment uses the latest Python version
 echo "Checking for the latest Python version..."
 
 LATEST_PYTHON=$(command -v python3)
