@@ -1,148 +1,111 @@
-# **FRECE: File Recovery Tool **
+# FRECE 2.0: Forensic Recovery and Evidence Collection Engine
 
-FRECE (File Recovery Enhanced Command-line Environment) is a powerful Python-based tool designed for file recovery. By integrating with tools like **TestDisk** and **PhotoRec**, it provides an interactive, color-coded CLI for recovering lost files and directories. This tool is specifically designed for **Kali Linux** and other Linux distributions, featuring tab-completion for navigation and command execution.
+Linux-first forensic CLI for evidence acquisition, file carving, deleted-file recovery, and custody verification.
 
----
+## Scope
 
-## **Overview**
-**FRECE** is a tool designed to make file recovery and data recovery tasks easy and efficient. The tool offers functionality for scanning directories, recovering files, running **TestDisk**/ **PhotoRec**, listing file types, and providing dynamic help in an interactive mode.
+- Streaming carving for common binary formats, including OOXML ZIP disambiguation
+- Deleted-file recovery through The Sleuth Kit (`fls`, `icat`, `istat`)
+- Case-based custody logging with HMAC-SHA256 verification
+- Write-block checks, subprocess hardening, and typed errors with remediation hints
+- UTC ISO 8601 timestamps with `Z` suffix across manifests and custody entries
 
----
+## Requirements
 
-## **Features**
-- **File Recovery:** Recover deleted or lost files from specified directories.
-- **Directory Scanning:** Scan directories for specific file types using extensions.
-- **Automated Tools:** Integrates with **TestDisk** and **PhotoRec** for advanced recovery.
-- **Tab Autocomplete:** Tab completion for file paths and commands, similar to Kali Linux.
-- **Interactive Mode:** CLI with command manuals and dynamic help.
-- **Color-coded Output:** Uses **Colorama** to add color to terminal outputs, enhancing user experience.
+- Python 3.11+
+- Linux
+- The Sleuth Kit installed and on `PATH`
+- `file` and `sha256sum` available on `PATH`
+- `libmagic` / `python-magic`
 
----
+## Installation
 
-## **Prerequisites**
-Before installing FRECE, ensure your system meets the following requirements:
-
-1. **Kali Linux** or another Linux-based operating system.
-2. **Python 3.x** installed.
-3. **Git** installed for cloning the repository.
-4. **TestDisk** and **PhotoRec** installed (these are auto-installed during setup).
-5. **Colorama** Python library (automatically installed in the virtual environment).
-
----
-
-## **Installation Instructions**
-The provided `install.sh` script automates the entire installation process. Follow these steps:
-
-### Step 1: Clone and Run the Installer
-
-First, clone the repository and change to the project directory:
 ```bash
-git clone https://github.com/Nakum-hub/frece.git
-cd frece
+pip install -e .
 ```
 
-Next, make the installation script executable and run it:
-```bash
-chmod +x install.sh
-sudo ./install.sh
-```
+## Deployment Gate
 
-### Step 2: Verify Installation
+Run these on the target Linux host before operational use:
 
-Once the installation is complete, activate the virtual environment and verify the installation:
 ```bash
-source ~/frece_venv/bin/activate
 frece --version
+frece tool-status
 ```
 
-To see a list of available commands, run:
+`frece tool-status` must exit `0`. A non-zero result means the host is missing required forensic tooling.
+
+## Usage
+
+### Carve files from an image
+
 ```bash
-frece --help
+frece carve /path/to/image.dd --output ./carved_files
 ```
 
----
+### Recover deleted files
 
-## **Usage**
-
-FRECE can be run interactively or with command-line arguments.
-
-### Interactive Mode
-To start the interactive mode, simply type:
 ```bash
-frece
+frece recover /path/to/image.dd --output ./recovered_files --verify-inodes
 ```
 
-In this mode, you can execute commands such as:
-- `recover`
-- `scan`
-- `list`
-- `save`
-- `man`
+### Create and verify a case
 
-You will also see a dynamic banner and can navigate the filesystem easily using tab completion.
-
-### Command Overview
-
-| Command                              | Description                                                 |
-|--------------------------------------|-------------------------------------------------------------|
-| `recover <source_dir> <target_dir>`  | Recover files from source to target directory.              |
-| `scan <directory> [extension]`       | Scan directory for files and filter by extension if given.  |
-| `list <directory>`                   | List file types and their counts in the specified directory.|
-| `testdisk`                           | Run TestDisk for partition/file recovery.                   |
-| `photorec`                           | Run PhotoRec to recover files by signature.                 |
-| `save <directory>`                   | Save recovered files to the specified directory.            |
-| `man <command>`                      | Display manual for a specific command.                      |
-| `--version`                          | Display the tool version.                                   |
-| `--help`                             | Display available commands and usage.                       |
-| `exit`                               | Exit interactive mode.                                      |
-
----
-
-## **Updating FRECE**
-To update FRECE to the latest version, use the following command:
 ```bash
-sudo ./install.sh --update
+frece case create "Case-2024-001"
+frece case log "Case-2024-001" ACQUIRE --evidence-id EV001 --source /dev/sda1 --detail source_hash=abc123
+frece case verify "Case-2024-001"
 ```
 
-If you encounter an issue with Git and receive the message:
-```
-To add an exception for this directory, call:
-    git config --global --add safe.directory /path/to/frece
-Failed to pull updates. Please check your network connection.
-```
+### Verify custody directly from a case directory
 
-Resolve it by running:
 ```bash
-sudo git config --global --add safe.directory /path/to/frece
-sudo ./install.sh --update
+frece custody verify ~/.frece/cases/Case-2024-001 --evidence-id EV001 --source abc123
 ```
 
----
+## Development
 
-## **Uninstallation**
-To uninstall FRECE and remove all installed files and the virtual environment:
+### Run the test suite
+
 ```bash
-sudo rm /usr/local/bin/frece
-rm -rf ~/frece_venv
+pytest tests/ -v
 ```
 
----
+### Run code quality tools
 
-## **Troubleshooting**
-- **Permission Errors:** Ensure you run commands with `sudo` where necessary.
-- **Dependency Issues:** Verify that **TestDisk**, **PhotoRec**, and **Python dependencies** are installed correctly.
-- **Git Issues:** Ensure you have network connectivity when using `--update`.
+```bash
+black frece tests
+ruff check frece tests
+mypy frece
+```
 
----
+## Verified State
 
-## **License and Contributions**
-This project is open-source and contributions are welcome! If you encounter issues or have suggestions, feel free to open an issue on the [GitHub repository](https://github.com/Nakum-hub/frece).
+- Local verification command: `py -3.13 -m pytest -q`
+- Current result: `83 passed, 2 skipped`
+- Defined tests: `85` across `6` test modules
+- `frece tool-status` correctly returns non-zero until required Linux tools are installed
 
----
+## Core Modules
 
-## **Author**
-Created by **Nakum-hub** for efficient and enhanced file recovery.
+- `frece/carver.py` - streaming signature scanning, type disambiguation, carving manifests
+- `frece/recovery.py` - deleted-file recovery, ddrescue map parsing, recovery manifests
+- `frece/custody.py` - custody database, HMAC verification, per-case secret handling
+- `frece/acquisition.py` - evidence acquisition and write-block checks
+- `frece/sandbox.py` - input validation and subprocess execution guards
+- `frece/parallel.py` - threaded hashing and signature-search dispatch
+- `frece/cli.py` - command-line interface
 
----
+## Operational Notes
 
-This updated README incorporates the features, installation instructions, commands, troubleshooting tips, and uninstallation details, making it a comprehensive guide for using and managing the FRECE tool.
+- Carving writes artifacts together with validation status; operators must review validation failures before treating a carved item as evidence.
+- Custody verification is HMAC-based and fails closed on tampered rows or source-hash mismatch.
+- This repository is CLI-only. There is no frontend or web application in the current tree.
+
+## License
+
+GPL-3.0-or-later
+
+## Authors
+
+DFIR Team
