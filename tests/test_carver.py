@@ -5,7 +5,6 @@ import struct
 import pytest
 
 from frece.carver import StreamingCarver
-from frece.errors import ValidationError
 
 
 class TestStreamingCarver:

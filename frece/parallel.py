@@ -5,7 +5,7 @@ import inspect
 import logging
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Callable, Any, Optional, Generator
+from typing import Callable, Any, Optional
 
 from frece.errors import FreceError
 

@@ -3,12 +3,15 @@
 import hashlib
 import json
 import logging
+import os
 import re
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+from frece.config import Config, load_config
 from frece.errors import AcquisitionError
 from frece.sandbox import SandboxedExecutor
 
@@ -116,9 +119,63 @@ class WriteBlockChecker:
 class EvidenceAcquisition:
     """Acquire evidence with hash logging."""
 
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(
+        self,
+        logger: Optional[logging.Logger] = None,
+        config: Optional[Config] = None,
+    ):
         self.logger = logger or logging.getLogger(__name__)
+        self.config = config or load_config()
         self.executor = SandboxedExecutor(logger)
+
+    @staticmethod
+    def _assert_safe_output_target(source: str, output_path: Path) -> None:
+        """Reject source/output combinations that can overwrite evidence."""
+        try:
+            resolved_source = Path(source).resolve()
+        except OSError:
+            resolved_source = Path(source)
+
+        try:
+            resolved_output = output_path.resolve()
+        except OSError:
+            resolved_output = output_path
+
+        if resolved_source == resolved_output:
+            raise AcquisitionError(
+                "Output path is the same file as the source",
+                remediation="Choose a different output location.",
+            )
+
+        try:
+            src_stat = os.stat(source)
+            if resolved_output.exists():
+                out_stat = os.stat(resolved_output)
+                if src_stat.st_ino == out_stat.st_ino and src_stat.st_dev == out_stat.st_dev:
+                    raise AcquisitionError(
+                        "Output is a hard-link alias of the source",
+                        remediation="Choose a different output location.",
+                    )
+        except OSError:
+            pass
+
+        try:
+            if resolved_output.exists():
+                output_mode = resolved_output.stat().st_mode
+                if stat.S_ISBLK(output_mode):
+                    raise AcquisitionError(
+                        f"Output path {output_path} is a block device",
+                        remediation="Specify a regular file path for the output image.",
+                    )
+                if stat.S_ISCHR(output_mode) or stat.S_ISFIFO(output_mode) or stat.S_ISSOCK(
+                    output_mode
+                ):
+                    raise AcquisitionError(
+                        f"Output path {output_path} is a special device",
+                        remediation="Specify a regular file path for the output image.",
+                    )
+        except OSError:
+            pass
 
     def acquire_device(
         self,
@@ -144,6 +201,7 @@ class EvidenceAcquisition:
         if writeblock_required and not force_no_writeblock:
             WriteBlockChecker.require_writeblock(source, force=False)
 
+        self._assert_safe_output_target(source, output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.logger.info(f"Starting acquisition from {source} to {output_path}")
@@ -153,7 +211,7 @@ class EvidenceAcquisition:
                 sha256_hash = hashlib.sha256()
                 md5_hash = hashlib.md5()
                 bytes_written = 0
-                chunk_size = 1024 * 1024
+                chunk_size = self.config.chunk_size
 
                 while chunk := src.read(chunk_size):
                     dst.write(chunk)
@@ -163,6 +221,9 @@ class EvidenceAcquisition:
 
                     if bytes_written % (100 * 1024 * 1024) == 0:
                         self.logger.info(f"Acquired {bytes_written / (1024**3):.2f} GB")
+
+                dst.flush()
+                os.fsync(dst.fileno())
 
         except FileNotFoundError as e:
             raise AcquisitionError(
@@ -356,7 +417,7 @@ class EvidenceAcquisition:
         sha256_hash = hashlib.sha256()
         try:
             with open(source_path, "rb") as f:
-                while chunk := f.read(1024 * 1024):
+                while chunk := f.read(self.config.chunk_size):
                     sha256_hash.update(chunk)
         except OSError as e:
             raise AcquisitionError(
@@ -369,8 +430,10 @@ class EvidenceAcquisition:
 
         try:
             with open(source_path, "rb") as src, open(output_file, "wb") as dst:
-                while chunk := src.read(1024 * 1024):
+                while chunk := src.read(self.config.chunk_size):
                     dst.write(chunk)
+                dst.flush()
+                os.fsync(dst.fileno())
         except OSError as e:
             raise AcquisitionError(
                 f"Cannot write {output_file}",

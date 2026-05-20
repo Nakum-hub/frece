@@ -16,6 +16,8 @@ class Config:
     chunk_size: int = 64 * 1024 * 1024  # 64 MB default chunk
     max_signature_length: int = 2048  # Max bytes to overlap between chunks
     max_video_size: int = 0  # 0 = unlimited
+    max_icat_timeout: int = 0  # 0 = unlimited
+    max_fls_timeout: int = 0  # 0 = unlimited
     max_path_length: int = 4096
     max_case_name_length: int = 255
 
@@ -50,6 +52,10 @@ def load_config(config_path: Path = Path.home() / ".frece" / "config.toml") -> C
                 config.max_signature_length = frece_config["max_signature_length"]
             if "max_video_size" in frece_config:
                 config.max_video_size = frece_config["max_video_size"]
+            if "max_icat_timeout" in frece_config:
+                config.max_icat_timeout = frece_config["max_icat_timeout"]
+            if "max_fls_timeout" in frece_config:
+                config.max_fls_timeout = frece_config["max_fls_timeout"]
 
     config.case_root.mkdir(parents=True, exist_ok=True)
     return config

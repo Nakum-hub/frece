@@ -1,15 +1,17 @@
 """Tests for chain of custody HMAC protection."""
 
 import hashlib
-import hmac
-import json
 import os
 import sqlite3
-from pathlib import Path
 
 import pytest
 
-from frece.custody import CustodyDatabase, create_case_secret_key
+from frece.custody import (
+    CustodyDatabase,
+    create_case_secret_key,
+    get_case_secret_key,
+    rotate_case_secret_key,
+)
 from frece.errors import CustodyError
 
 
@@ -30,7 +32,7 @@ class TestCustodyDatabase:
     def test_init_creates_database(self, temp_dir, secret_key):
         """Test database initialization."""
         db_path = temp_dir / "custody.db"
-        custody_db = CustodyDatabase(db_path, secret_key)
+        CustodyDatabase(db_path, secret_key)
 
         assert db_path.exists()
 
@@ -214,6 +216,37 @@ class TestCustodyDatabase:
         key2 = create_case_secret_key(case_dir)
 
         assert key1 == key2
+
+    def test_case_secret_key_uses_external_store(self, temp_dir, monkeypatch):
+        """FRECE_KEY_STORE must move the HMAC key outside the case directory."""
+        key_store = temp_dir / "keys"
+        case_dir = temp_dir / "case1"
+        monkeypatch.setenv("FRECE_KEY_STORE", str(key_store))
+
+        key = create_case_secret_key(case_dir, case_name="case1")
+
+        assert key == get_case_secret_key(case_dir, case_name="case1", create=False)
+        assert (key_store / "case1.key").exists()
+        assert not (case_dir / ".case_secret").exists()
+
+    def test_rotate_case_secret_key_rehashes_database(self, temp_dir):
+        """Key rotation must keep the custody DB verifiable under the new key."""
+        case_dir = temp_dir / "case1"
+        original_key = create_case_secret_key(case_dir, case_name="case1")
+        custody_db = CustodyDatabase(case_dir / "custody.db", original_key)
+        custody_db.log_event(
+            event_type="ACQUIRE",
+            evidence_id="EV001",
+            operator="analyst1",
+            details={"source": "/dev/sda"},
+        )
+
+        rotate_case_secret_key(case_dir, case_name="case1")
+        rotated_key = get_case_secret_key(case_dir, case_name="case1", create=False)
+        rotated_db = CustodyDatabase(case_dir / "custody.db", rotated_key, initialize=False)
+
+        assert rotated_key != original_key
+        assert rotated_db.verify_database() == (1, 0)
 
     def test_event_timestamp_format(self, custody_db):
         """Test that timestamps are ISO 8601 with Z suffix."""

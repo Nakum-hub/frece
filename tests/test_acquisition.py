@@ -1,6 +1,7 @@
 """Tests for evidence acquisition."""
 
 import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -74,7 +75,7 @@ class TestEvidenceAcquisition:
 
         output = temp_dir / "output.img"
 
-        metadata = acq.acquire_device(
+        acq.acquire_device(
             str(source), output, writeblock_required=False, force_no_writeblock=True
         )
 
@@ -115,7 +116,7 @@ class TestEvidenceAcquisition:
 
         output = temp_dir / "subdir" / "output.img"
 
-        metadata = acq.acquire_device(
+        acq.acquire_device(
             str(source), output, writeblock_required=False, force_no_writeblock=True
         )
 
@@ -134,6 +135,23 @@ class TestEvidenceAcquisition:
 
         assert "timestamp" in metadata
         assert metadata["timestamp"].endswith("Z")
+
+    def test_safe_output_target_rejects_same_file(self, temp_dir):
+        """Acquisition must reject a source/output self-overwrite."""
+        source = temp_dir / "source.img"
+        source.write_bytes(b"evidence")
+
+        with pytest.raises(AcquisitionError, match="same file"):
+            EvidenceAcquisition._assert_safe_output_target(str(source), source)
+
+    @pytest.mark.skipif(os.name != "posix", reason="special devices are POSIX-specific")
+    def test_safe_output_target_rejects_special_device(self, temp_dir):
+        """Acquisition must reject character-device outputs like /dev/null."""
+        source = temp_dir / "source.img"
+        source.write_bytes(b"evidence")
+
+        with pytest.raises(AcquisitionError, match="special device"):
+            EvidenceAcquisition._assert_safe_output_target(str(source), Path("/dev/null"))
 
     def test_acquire_multiple_files(self, acq, temp_dir):
         """Test acquiring multiple files."""

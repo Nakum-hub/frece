@@ -6,10 +6,9 @@ Validated codebase. Operational deployment is gated on a Linux host where `frece
 
 ## What Was Verified Locally
 
-- Test command: `py -3.13 -m pytest -q`
-- Result: `83 passed, 2 skipped`
-- Defined tests: `85`
-- Core CLI commands implemented: `tool-status`, `carve`, `recover`, `acquire`, `custody verify`, `case create|log|verify`
+- Current unit-suite result: `118 passed, 1 skipped`
+- CI snapshot command: `make test-count`
+- Core CLI commands implemented: `tool-status`, `carve`, `scan`, `partitions`, `recover`, `acquire`, `custody verify`, `case create|log|verify|rotate-key`
 
 ## Prerequisites
 
@@ -23,6 +22,12 @@ Example Ubuntu install:
 
 ```bash
 sudo apt-get install sleuthkit libmagic1 file coreutils
+```
+
+RHEL/Fedora equivalent:
+
+```bash
+sudo dnf install sleuthkit file-libs file coreutils
 ```
 
 ## Installation
@@ -39,14 +44,16 @@ Run these on the actual Linux deployment host:
 ```bash
 frece --version
 frece tool-status
-pytest tests/ -q
+pytest -q -m "not acceptance"
+pytest -q -m acceptance
 ```
 
 Deployment should be blocked unless:
 
 - `frece --version` succeeds
 - `frece tool-status` exits `0`
-- the local operator accepts the test result on the target environment
+- the unit suite passes
+- the provisioned acceptance runner passes `pytest -q -m acceptance`
 
 ## Command Reference
 
@@ -61,10 +68,18 @@ Produces carved artifacts and `carve_manifest.json`.
 ### Recover deleted files
 
 ```bash
-frece recover /path/to/evidence.dd --output ./recovered_files --verify-inodes
+frece recover /path/to/evidence.dd --output ./recovered_files --verify-inodes --timeout 0
 ```
 
 Produces recovered files and `recovery_manifest.json`.
+
+### Discover partitions
+
+```bash
+frece partitions /path/to/evidence.dd
+```
+
+Returns JSON rows including `start_sector`, suitable for piping into `frece scan --offset` or `frece recover --offset`.
 
 ### Acquire an image
 
@@ -80,6 +95,7 @@ Use `--force-no-writeblock` only with explicit approval if hardware write-blocki
 frece case create "Case-2024-001"
 frece case log "Case-2024-001" ACQUIRE --evidence-id EV001 --source /dev/sda1 --detail source_hash=abc123
 frece case verify "Case-2024-001"
+frece case rotate-key "Case-2024-001"
 ```
 
 ### Direct custody verification
@@ -127,13 +143,15 @@ tests/
 ### Recovery
 
 - Deleted inode enumeration with `fls`
-- Extraction with `icat`
+- Streaming extraction with `icat`
+- Streaming `fls` parsing without full-output buffering
 - Extent-aware bad-sector filtering with `istat` plus ddrescue mapfiles
-- Recovery manifests and optional post-extraction hash verification
+- Recovery manifests, original deleted filenames, and optional post-extraction hash verification
 
 ### Custody
 
 - Per-case secret keys generated from `os.urandom(32)`
+- `FRECE_KEY_STORE` support for storing HMAC keys outside the case directory
 - HMAC-SHA256 verification of custody rows
 - Source-hash verification for acquired evidence
 

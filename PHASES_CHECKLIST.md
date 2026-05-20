@@ -14,19 +14,22 @@
 ## Phase 2: Deleted File Recovery
 
 - [x] Deleted inodes listed through `fls`
-- [x] Inodes extracted through `icat`
+- [x] Inodes extracted through streaming `icat`
 - [x] `icat` calls logged with return code and bytes written
-- [x] Recovered files are named from detected type
+- [x] Recovered files use original deleted filenames when available
+- [x] Type filtering happens before recovered artifacts are written to disk
 - [x] `--verify-inodes` re-reads recovered files and checks hashes
 - [x] ddrescue mapfiles are parsed with `-` as the bad-sector flag
 - [x] Mapfile filtering is extent-aware through `istat` block-range parsing
 - [x] `SECTOR_BAD` and `CUSTODY_WARNING` events are logged
+- [x] `fls` parsing is streamed and timeout-configurable
 
 ## Phase 3: Chain of Custody
 
 - [x] Custody rows are HMAC-SHA256 protected
 - [x] Case secret keys are generated from `os.urandom(32)`
-- [x] Case secret keys are persisted per case
+- [x] Case secret keys can live outside the case directory via `FRECE_KEY_STORE`
+- [x] Case key rotation is implemented
 - [x] `frece case verify` verifies a case database
 - [x] `frece custody verify <case_dir>` verifies a custody database directly
 - [x] Source-hash verification fails closed on mismatch
@@ -43,26 +46,15 @@
 
 ## Phase 5: Tests
 
-- [x] Local verification command run: `py -3.13 -m pytest -q`
-- [x] Current result: `83 passed, 2 skipped`
-- [x] Defined tests: `85`
-- [x] Test modules: `6`
-- [x] Coverage includes CLI dispatch, custody verification, OOXML disambiguation, MP4 extent sizing, and PDF EOF carving
-
-Per-module counts:
-
-- [x] `tests/test_acquisition.py` - 14 tests
-- [x] `tests/test_carver.py` - 11 tests
-- [x] `tests/test_custody.py` - 14 tests
-- [x] `tests/test_integration.py` - 14 tests
-- [x] `tests/test_parallel.py` - 9 tests
-- [x] `tests/test_sandbox.py` - 23 tests
+- [x] Current unit-suite result: `118 passed, 1 skipped`
+- [x] CI snapshot command added: `make test-count`
+- [x] Linux acceptance suite added under `tests/acceptance/`
+- [x] Coverage includes CLI dispatch, custody verification, partition discovery, safe acquisition targets, OOXML disambiguation, MP4 extent sizing, and PDF EOF carving
 
 ## Phase 6: Packaging and Cleanup
 
-- [x] Frontend and web files removed from the repository root
-- [x] Duplicate extracted tree removed
-- [x] Nested archive `frece/frece_(2).zip` removed
+- [x] Legacy root install path removed (`frece.py`, `setup.py`, `install.sh`)
+- [x] GitHub Actions CI added for unit tests, Ruff, and Mypy
 - [x] Canonical source tree is `frece/`
 - [x] `pyproject.toml` provides the package and CLI entrypoint
 

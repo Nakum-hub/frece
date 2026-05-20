@@ -6,10 +6,9 @@ Validated codebase with implemented Linux CLI workflows for carving, recovery, a
 
 ## Verified Snapshot
 
-- Verification command: `py -3.13 -m pytest -q`
-- Result: `83 passed, 2 skipped`
-- Defined tests: `85`
-- Test modules: `6`
+- Current unit-suite result: `118 passed, 1 skipped`
+- CI snapshot command: `make test-count`
+- Acceptance suite added under `tests/acceptance/`
 
 ## Implemented Modules
 
@@ -20,12 +19,15 @@ Validated codebase with implemented Linux CLI workflows for carving, recovery, a
   - MP4/MOV atom-based extent scanning
   - carving manifest output
 - `frece/recovery.py`
-  - deleted inode enumeration with `fls`
-  - extraction with `icat`
+  - streamed deleted-entry enumeration with `fls`
+  - streamed extraction with `icat`
   - extent-aware ddrescue map filtering through `istat`
+  - original deleted filenames preserved when safe
   - recovery manifest output
 - `frece/custody.py`
   - per-case secrets from `os.urandom(32)`
+  - externalized key storage via `FRECE_KEY_STORE`
+  - case key rotation support
   - HMAC-SHA256 custody verification
   - SQLite read-only verification paths
 - `frece/acquisition.py`
@@ -40,28 +42,21 @@ Validated codebase with implemented Linux CLI workflows for carving, recovery, a
 - `frece/cli.py`
   - `tool-status`
   - `carve`
+  - `scan`
+  - `partitions`
   - `recover`
   - `acquire`
   - `custody verify`
-  - `case create|log|verify`
-
-## Test Inventory
-
-- `tests/test_acquisition.py` - 14 tests
-- `tests/test_carver.py` - 11 tests
-- `tests/test_custody.py` - 14 tests
-- `tests/test_integration.py` - 14 tests
-- `tests/test_parallel.py` - 9 tests
-- `tests/test_sandbox.py` - 23 tests
+  - `case create|log|verify|rotate-key`
 
 ## Important Behavioral Guarantees
 
 - Typed exceptions are exposed for sandbox, acquisition, carve, recovery, custody, and validation failures.
-- All manifests and custody entries use UTC ISO 8601 timestamps with `Z` suffix.
+- All manifests and custody entries use UTC ISO 8601 timestamps with `Z` suffix and fsync their on-disk JSON outputs.
 - Carving preserves validation status per artifact instead of silently treating every carve as trusted evidence.
 - Custody verification fails closed on tampered rows and source-hash mismatch.
-- `frece tool-status` now acts as a real gate: missing tools produce a non-zero exit code.
+- `frece tool-status` now acts as a real gate: missing tools produce a non-zero exit code and checks `mmls` plus `python-magic`.
 
 ## Deployment Position
 
-The repository is now internally consistent and the local suite is green. Final operational deployment still requires a Linux host with the forensic toolchain installed and a successful `frece tool-status` run on that host.
+The repository is closer to field deployment, but final operational deployment still requires a Linux host with the forensic toolchain installed plus a successful unit and acceptance run on that host.

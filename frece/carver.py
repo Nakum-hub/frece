@@ -2,12 +2,13 @@
 
 import hashlib
 import json
+import os
 import re
 import struct
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Generator, Optional
+from typing import BinaryIO, Generator
 
 from frece.errors import CarveError, ValidationError
 
@@ -98,7 +99,7 @@ class SignatureDatabase:
 class StreamingCarver:
     """Memory-efficient file carver using chunked reads."""
 
-    def __init__(self, chunk_size: int = 64 * 1024 * 1024, max_sig_len: int = 2048):
+    def __init__(self, chunk_size: int | object = 64 * 1024 * 1024, max_sig_len: int = 2048):
         self.max_video_size = 0
         if isinstance(chunk_size, int):
             self.chunk_size = chunk_size
@@ -117,57 +118,58 @@ class StreamingCarver:
         verify: bool = True,
     ):
         """Carve files from source with streaming reads."""
+        source_path = Path(source_path)
+        output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            with open(source_path, "rb") as f:
-                source_hash = self._hash_file(f)
-        except OSError as e:
+            source_hash, found_sigs = self._scan_and_hash(source_path)
+        except OSError as exc:
             raise CarveError(
                 f"Cannot open source: {source_path}",
                 remediation="Verify path exists and is readable",
-            ) from e
+            ) from exc
 
         carved_files = []
         carved_ranges: list[tuple[int, int, str]] = []
-        found_sigs = {}
 
-        with open(source_path, "rb") as f:
-            for chunk_offset, chunk_data in self._read_chunks(f):
-                for sig_offset, sig_type in SignatureDatabase.find_signatures(
-                    chunk_data, chunk_offset
-                ):
-                    if sig_offset not in found_sigs:
-                        found_sigs[sig_offset] = []
-                    found_sigs[sig_offset].append(sig_type)
-
-        for sig_offset in sorted(found_sigs.keys()):
+        for sig_offset in sorted(found_sigs):
             types = found_sigs[sig_offset]
             if self._should_skip_nested_signature(sig_offset, types, carved_ranges):
                 continue
-            file_type = self._disambiguate_type(source_path, sig_offset, types)
 
+            file_type = self._disambiguate_type(source_path, sig_offset, types)
             if not file_type:
                 continue
 
-            file_data, actual_size = self._extract_file(
-                source_path, sig_offset, file_type
-            )
-
-            if not file_data:
+            size = self._measure_file_size(source_path, sig_offset, file_type)
+            if size <= 0:
                 continue
 
-            file_sha256 = hashlib.sha256(file_data).hexdigest()
+            output_file = output_dir / f"{sig_offset:016x}_{file_type}"
+            file_sha256, actual_size = self._write_carved_file(
+                source_path,
+                sig_offset,
+                size,
+                output_file,
+            )
+            if actual_size <= 0:
+                output_file.unlink(missing_ok=True)
+                continue
 
             validation_passed = True
             validation_notes = ""
 
             if verify:
                 try:
-                    validation_notes = self._validate_file(file_type, file_data)
-                except ValidationError as e:
+                    validation_notes = self._validate_output_file(
+                        file_type,
+                        output_file,
+                        actual_size,
+                    )
+                except ValidationError as exc:
                     validation_passed = False
-                    validation_notes = str(e)
+                    validation_notes = str(exc)
 
             carved_file = CarvedFile(
                 offset=sig_offset,
@@ -178,17 +180,9 @@ class StreamingCarver:
                 validation_notes=validation_notes,
             )
             carved_files.append(carved_file)
+
             if file_type in {"zip", "docx", "xlsx", "pptx"} and actual_size > 0:
                 carved_ranges.append((sig_offset, sig_offset + actual_size, file_type))
-
-            output_file = output_dir / f"{sig_offset:016x}_{file_type}"
-            try:
-                output_file.write_bytes(file_data)
-            except OSError as e:
-                raise CarveError(
-                    f"Cannot write carved file: {output_file}",
-                    remediation="Check output directory permissions and disk space",
-                ) from e
 
         manifest = CarveManifest(
             source=str(source_path),
@@ -198,36 +192,60 @@ class StreamingCarver:
         )
 
         manifest_path = output_dir / "carve_manifest.json"
-        with open(manifest_path, "w") as f:
-            json.dump(manifest.to_dict(), f, indent=2)
+        try:
+            with open(manifest_path, "w", encoding="utf-8") as handle:
+                json.dump(manifest.to_dict(), handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as exc:
+            raise CarveError(
+                f"Cannot write carving manifest: {manifest_path}",
+                remediation="Check output directory permissions and disk space",
+            ) from exc
 
         return manifest
 
-    def _read_chunks(
-        self, f
-    ) -> Generator[tuple[int, bytes], None, None]:
-        """Read file in overlapping chunks."""
+    def _scan_and_hash(self, source_path: Path) -> tuple[str, dict[int, list[str]]]:
+        """Single pass: compute SHA256 and collect all signature positions."""
+        sha256 = hashlib.sha256()
+        found_sigs: dict[int, list[str]] = {}
         chunk_offset = 0
         previous_overlap = b""
 
-        while True:
-            chunk = f.read(self.chunk_size)
-            if not chunk:
-                break
+        with open(source_path, "rb") as handle:
+            while True:
+                chunk = handle.read(self.chunk_size)
+                if not chunk:
+                    break
 
-            combined = previous_overlap + chunk
-            yield (chunk_offset - len(previous_overlap), combined)
+                sha256.update(chunk)
+                combined = previous_overlap + chunk
+                abs_offset = chunk_offset - len(previous_overlap)
 
-            chunk_offset += len(chunk)
-            previous_overlap = chunk[-self.max_sig_len :]
+                for sig_offset, sig_type in SignatureDatabase.find_signatures(combined, abs_offset):
+                    found_sigs.setdefault(sig_offset, []).append(sig_type)
 
-    def _hash_file(self, f) -> str:
-        """Compute SHA256 of entire file in one pass."""
-        f.seek(0)
-        hasher = hashlib.sha256()
-        while chunk := f.read(1024 * 1024):
-            hasher.update(chunk)
-        return hasher.hexdigest()
+                chunk_offset += len(chunk)
+                previous_overlap = chunk[-self.max_sig_len :] if self.max_sig_len else b""
+
+        return sha256.hexdigest(), found_sigs
+
+    def _measure_file_size(self, source_path: Path, offset: int, file_type: str) -> int:
+        """Measure how many bytes should be copied for a carved artifact."""
+        with open(source_path, "rb") as handle:
+            handle.seek(offset)
+
+            if file_type in {"mp4", "mov"}:
+                return self._get_mp4_size(handle, offset, source_path)
+            if file_type in {"zip", "docx", "xlsx", "pptx"}:
+                return self._find_zip_end(handle, offset, source_path)
+            if file_type == "pdf":
+                return self._find_pdf_end(handle, offset, source_path)
+            if file_type == "jpeg":
+                return self._find_jpeg_end(handle)
+            if file_type == "png":
+                return self._find_png_end(handle)
+            return self._estimate_file_size(file_type)
 
     def _disambiguate_type(
         self, source_path: Path, offset: int, types: list[str]
@@ -237,15 +255,17 @@ class StreamingCarver:
 
         if "zip" in unique_types:
             try:
-                with open(source_path, "rb") as f:
-                    f.seek(offset + 30)
-                    filename = f.read(256).split(b"\x00")[0].decode("utf-8", errors="ignore")
+                with open(source_path, "rb") as handle:
+                    handle.seek(offset + 30)
+                    filename = handle.read(256).split(b"\x00")[0].decode(
+                        "utf-8", errors="ignore"
+                    )
 
                     if "word/" in filename:
                         return "docx"
-                    elif "xl/" in filename:
+                    if "xl/" in filename:
                         return "xlsx"
-                    elif "ppt/" in filename:
+                    if "ppt/" in filename:
                         return "pptx"
             except (OSError, UnicodeDecodeError):
                 pass
@@ -253,13 +273,13 @@ class StreamingCarver:
 
         if "riff" in unique_types:
             try:
-                with open(source_path, "rb") as f:
-                    f.seek(offset + 8)
-                    riff_type = f.read(4)
+                with open(source_path, "rb") as handle:
+                    handle.seek(offset + 8)
+                    riff_type = handle.read(4)
 
                     if riff_type == b"WAVE":
                         return "wav"
-                    elif riff_type == b"AVI ":
+                    if riff_type == b"AVI ":
                         return "avi"
             except OSError:
                 pass
@@ -267,67 +287,72 @@ class StreamingCarver:
 
         if "eml" in unique_types:
             try:
-                with open(source_path, "rb") as f:
-                    f.seek(offset)
-                    next_bytes = f.read(512)
+                with open(source_path, "rb") as handle:
+                    handle.seek(offset)
+                    next_bytes = handle.read(512)
                     if re.search(rb"^[A-Za-z\-]+:\s", next_bytes, re.MULTILINE):
                         return "eml"
-                    else:
-                        return ""
+                    return ""
             except OSError:
                 pass
             return "eml"
 
         return types[0] if types else "unknown"
 
-    def _extract_file(
-        self, source_path: Path, offset: int, file_type: str
-    ) -> tuple[bytes, int]:
-        """Extract file from source."""
-        with open(source_path, "rb") as f:
-            f.seek(offset)
+    def _write_carved_file(
+        self, source_path: Path, offset: int, size: int, output_file: Path
+    ) -> tuple[str, int]:
+        """Stream-copy bytes from the source image into an output artifact."""
+        sha256 = hashlib.sha256()
+        written = 0
+        chunk_size = 4 * 1024 * 1024
 
-            if file_type in {"mp4", "mov"}:
-                size = self._get_mp4_size(f, offset, source_path)
-            elif file_type in {"zip", "docx", "xlsx", "pptx"}:
-                size = self._find_zip_end(f, offset, source_path)
-            elif file_type == "pdf":
-                size = self._find_pdf_end(f, offset, source_path)
-            elif file_type == "jpeg":
-                size = self._find_jpeg_end(f)
-            elif file_type == "png":
-                size = self._find_png_end(f)
-            else:
-                size = self._estimate_file_size(file_type)
+        try:
+            with open(source_path, "rb") as src, open(output_file, "wb") as dst:
+                src.seek(offset)
+                remaining = size
+                while remaining > 0:
+                    to_read = min(chunk_size, remaining)
+                    chunk = src.read(to_read)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+                    sha256.update(chunk)
+                    written += len(chunk)
+                    remaining -= len(chunk)
 
-            f.seek(offset)
-            data = f.read(size)
+                dst.flush()
+                os.fsync(dst.fileno())
+        except OSError as exc:
+            raise CarveError(
+                f"Cannot write carved file: {output_file}",
+                remediation="Check output directory permissions and disk space",
+            ) from exc
 
-        return data, len(data)
+        return sha256.hexdigest(), written
 
-    def _get_mp4_size(self, f, offset: int, source_path: Path) -> int:
+    def _get_mp4_size(self, handle: BinaryIO, offset: int, source_path: Path) -> int:
         """Scan forward from ftyp to find total file extent via mdat atom."""
         source_size = source_path.stat().st_size
         fallback_size = source_size - offset
-        if self.max_video_size:
+        if self.max_video_size > 0:
             fallback_size = min(fallback_size, self.max_video_size)
 
-        # ftyp box tells us nothing about file size - scan for mdat
-        f.seek(offset)
+        handle.seek(offset)
         pos = offset
         while pos < source_size - 8:
-            f.seek(pos)
-            header = f.read(8)
+            handle.seek(pos)
+            header = handle.read(8)
             if len(header) < 8:
                 break
-            atom_size = struct.unpack(">I", header[0:4])[0]
+            atom_size = int(struct.unpack(">I", header[0:4])[0])
             atom_type = header[4:8]
             header_size = 8
             if atom_size == 1:
-                largesize = f.read(8)
+                largesize = handle.read(8)
                 if len(largesize) < 8:
                     break
-                atom_size = struct.unpack(">Q", largesize)[0]
+                atom_size = int(struct.unpack(">Q", largesize)[0])
                 header_size = 16
             elif atom_size == 0:
                 if atom_type == b"mdat":
@@ -340,9 +365,9 @@ class StreamingCarver:
             pos += atom_size
         return fallback_size
 
-    def _find_zip_end(self, f, offset: int, source_path: Path) -> int:
+    def _find_zip_end(self, handle: BinaryIO, offset: int, source_path: Path) -> int:
         """Find ZIP end-of-central-directory to bound ZIP-based containers."""
-        start_pos = f.tell()
+        start_pos = handle.tell()
         source_size = source_path.stat().st_size
         max_size = min(500 * 1024 * 1024, source_size - offset)
         chunk_size = 1024 * 1024
@@ -351,14 +376,14 @@ class StreamingCarver:
         prev_bytes = b""
 
         while pos - start_pos < max_size:
-            chunk = f.read(min(chunk_size, max_size - (pos - start_pos)))
+            chunk = handle.read(min(chunk_size, max_size - (pos - start_pos)))
             if not chunk:
                 break
 
             combined = prev_bytes + chunk
             idx = combined.rfind(b"PK\x05\x06")
             if idx != -1 and len(combined) >= idx + 22:
-                comment_len = struct.unpack("<H", combined[idx + 20 : idx + 22])[0]
+                comment_len = int(struct.unpack("<H", combined[idx + 20 : idx + 22])[0])
                 eocd_end = idx + 22 + comment_len
                 if len(combined) >= eocd_end:
                     return pos - start_pos - len(prev_bytes) + eocd_end
@@ -368,9 +393,9 @@ class StreamingCarver:
 
         return max_size
 
-    def _find_jpeg_end(self, f) -> int:
+    def _find_jpeg_end(self, handle: BinaryIO) -> int:
         """Find JPEG EOF marker (FF D9)."""
-        start_pos = f.tell()
+        start_pos = handle.tell()
         max_size = 100 * 1024 * 1024
 
         chunk_size = 1024 * 1024
@@ -378,13 +403,12 @@ class StreamingCarver:
         prev_byte = b""
 
         while pos - start_pos < max_size:
-            chunk = f.read(chunk_size)
+            chunk = handle.read(chunk_size)
             if not chunk:
                 break
 
             combined = prev_byte + chunk
             idx = combined.find(b"\xff\xd9")
-
             if idx != -1:
                 return pos - start_pos - len(prev_byte) + idx + 2
 
@@ -393,9 +417,9 @@ class StreamingCarver:
 
         return min(max_size, pos - start_pos)
 
-    def _find_png_end(self, f) -> int:
+    def _find_png_end(self, handle: BinaryIO) -> int:
         """Find PNG IEND chunk."""
-        start_pos = f.tell()
+        start_pos = handle.tell()
         max_size = 100 * 1024 * 1024
 
         chunk_size = 1024 * 1024
@@ -403,13 +427,12 @@ class StreamingCarver:
         prev_bytes = b""
 
         while pos - start_pos < max_size:
-            chunk = f.read(chunk_size)
+            chunk = handle.read(chunk_size)
             if not chunk:
                 break
 
             combined = prev_bytes + chunk
             idx = combined.find(b"IEND")
-
             if idx != -1:
                 return pos - start_pos - len(prev_bytes) + idx + 8
 
@@ -418,9 +441,9 @@ class StreamingCarver:
 
         return min(max_size, pos - start_pos)
 
-    def _find_pdf_end(self, f, offset: int, source_path: Path) -> int:
+    def _find_pdf_end(self, handle: BinaryIO, offset: int, source_path: Path) -> int:
         """Find the last PDF EOF marker within the carving window."""
-        start_pos = f.tell()
+        start_pos = handle.tell()
         source_size = source_path.stat().st_size
         max_size = min(500 * 1024 * 1024, source_size - offset)
 
@@ -430,7 +453,7 @@ class StreamingCarver:
         eof_end = 0
 
         while pos - start_pos < max_size:
-            chunk = f.read(min(chunk_size, max_size - (pos - start_pos)))
+            chunk = handle.read(min(chunk_size, max_size - (pos - start_pos)))
             if not chunk:
                 break
 
@@ -445,6 +468,142 @@ class StreamingCarver:
             return eof_end
 
         return min(max_size, pos - start_pos)
+
+    def _validate_output_file(self, file_type: str, output_file: Path, size: int) -> str:
+        """Validate a carved artifact without loading large payloads wholesale."""
+        if size <= 16 * 1024 * 1024:
+            return self._validate_file(file_type, output_file.read_bytes())
+
+        match file_type:
+            case "jpeg":
+                head = self._read_prefix(output_file, 4)
+                tail = self._read_suffix(output_file, 2)
+                if len(head) < 4:
+                    raise ValidationError("JPEG too small")
+                if head[0:2] != b"\xff\xd8":
+                    raise ValidationError("JPEG: Invalid SOI marker")
+                if tail != b"\xff\xd9":
+                    raise ValidationError("JPEG: Missing EOI marker")
+                return "JPEG validated: SOI and EOI present"
+
+            case "png":
+                head = self._read_prefix(output_file, 24)
+                if len(head) < 24:
+                    raise ValidationError("PNG too small")
+                if head[8:12] != b"IHDR":
+                    raise ValidationError("PNG: Invalid IHDR chunk")
+                return "PNG validated: IHDR present"
+
+            case "bmp":
+                head = self._read_prefix(output_file, 54)
+                if len(head) < 54:
+                    raise ValidationError("BMP too small")
+                if head[0:2] != b"BM":
+                    raise ValidationError("BMP: Invalid signature")
+                file_size_field = int(struct.unpack_from("<I", head, 2)[0])
+                if not (int(size * 0.8) <= file_size_field <= int(size * 1.2)):
+                    raise ValidationError(
+                        "BMP: file_size field "
+                        f"{file_size_field} inconsistent with carved size {size}"
+                    )
+                pixel_offset = int(struct.unpack_from("<I", head, 10)[0])
+                if pixel_offset < 26:
+                    raise ValidationError(f"BMP: Invalid pixel data offset {pixel_offset}")
+                return "BMP validated: signature and size field consistent"
+
+            case "pdf":
+                if not self._file_contains_any(output_file, (b"xref", b"stream")):
+                    raise ValidationError("PDF: No xref or stream found")
+                return "PDF validated: xref/stream present"
+
+            case "gif":
+                head = self._read_prefix(output_file, 13)
+                tail = self._read_suffix(output_file, 1)
+                if len(head) < 13:
+                    raise ValidationError("GIF too small")
+                if head[0:6] not in (b"GIF87a", b"GIF89a"):
+                    raise ValidationError("GIF: Invalid header")
+                if tail != b"\x3b":
+                    raise ValidationError("GIF: Missing trailer byte")
+                return "GIF validated: header and trailer present"
+
+            case "tiff":
+                head = self._read_prefix(output_file, 8)
+                if len(head) < 8:
+                    raise ValidationError("TIFF too small")
+                byte_order = head[0:2]
+                if byte_order == b"II":
+                    magic = struct.unpack_from("<H", head, 2)[0]
+                elif byte_order == b"MM":
+                    magic = struct.unpack_from(">H", head, 2)[0]
+                else:
+                    raise ValidationError("TIFF: Invalid byte order marker")
+                if magic != 42:
+                    raise ValidationError(f"TIFF: Invalid magic number {magic}")
+                return f"TIFF validated: {('little' if byte_order == b'II' else 'big')}-endian"
+
+            case "mp3":
+                head = self._read_prefix(output_file, 4)
+                if len(head) < 4:
+                    raise ValidationError("MP3 too small")
+                sync = head[0:2]
+                if sync not in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+                    raise ValidationError("MP3: Invalid frame sync")
+                return "MP3 validated: frame sync present"
+
+            case "sqlite":
+                head = self._read_prefix(output_file, 20)
+                if len(head) < 20:
+                    raise ValidationError("SQLite too small")
+                try:
+                    page_size = int(struct.unpack(">H", head[16:18])[0])
+                    if page_size == 1:
+                        page_size = 65536
+                    if (
+                        page_size < 512
+                        or page_size > 65536
+                        or (page_size & (page_size - 1)) != 0
+                    ):
+                        raise ValidationError(f"SQLite: Invalid page size {page_size}")
+                    return f"SQLite validated: page size {page_size}"
+                except struct.error as exc:
+                    raise ValidationError("SQLite: Cannot read page size") from exc
+
+            case _:
+                return "No secondary validation for this type"
+
+    def _read_prefix(self, output_file: Path, size: int) -> bytes:
+        """Read the leading bytes of a carved artifact."""
+        with output_file.open("rb") as handle:
+            return handle.read(size)
+
+    def _read_suffix(self, output_file: Path, size: int) -> bytes:
+        """Read the trailing bytes of a carved artifact."""
+        if size <= 0:
+            return b""
+
+        file_size = output_file.stat().st_size
+        with output_file.open("rb") as handle:
+            handle.seek(max(file_size - size, 0))
+            return handle.read(size)
+
+    def _file_contains_any(self, output_file: Path, needles: tuple[bytes, ...]) -> bool:
+        """Stream-search a file for any of the given byte markers."""
+        overlap = max(len(needle) for needle in needles)
+        previous = b""
+
+        with output_file.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+
+                combined = previous + chunk
+                if any(needle in combined for needle in needles):
+                    return True
+                previous = combined[-overlap:]
+
+        return False
 
     def _validate_file(self, file_type: str, data: bytes) -> str:
         """Apply secondary validation rules."""
@@ -470,13 +629,13 @@ class StreamingCarver:
                     raise ValidationError("BMP too small")
                 if data[0:2] != b"BM":
                     raise ValidationError("BMP: Invalid signature")
-                file_size_field = struct.unpack_from("<I", data, 2)[0]
+                file_size_field = int(struct.unpack_from("<I", data, 2)[0])
                 if not (int(len(data) * 0.8) <= file_size_field <= int(len(data) * 1.2)):
                     raise ValidationError(
                         f"BMP: file_size field {file_size_field} "
                         f"inconsistent with carved size {len(data)}"
                     )
-                pixel_offset = struct.unpack_from("<I", data, 10)[0]
+                pixel_offset = int(struct.unpack_from("<I", data, 10)[0])
                 if pixel_offset < 26:
                     raise ValidationError(f"BMP: Invalid pixel data offset {pixel_offset}")
                 return "BMP validated: signature and size field consistent"
@@ -523,14 +682,18 @@ class StreamingCarver:
                 if len(data) < 20:
                     raise ValidationError("SQLite too small")
                 try:
-                    page_size = struct.unpack(">H", data[16:18])[0]
+                    page_size = int(struct.unpack(">H", data[16:18])[0])
                     if page_size == 1:
                         page_size = 65536
-                    if page_size < 512 or page_size > 65536 or (page_size & (page_size - 1)) != 0:
+                    if (
+                        page_size < 512
+                        or page_size > 65536
+                        or (page_size & (page_size - 1)) != 0
+                    ):
                         raise ValidationError(f"SQLite: Invalid page size {page_size}")
                     return f"SQLite validated: page size {page_size}"
-                except struct.error as e:
-                    raise ValidationError("SQLite: Cannot read page size") from e
+                except struct.error as exc:
+                    raise ValidationError("SQLite: Cannot read page size") from exc
 
             case _:
                 return "No secondary validation for this type"

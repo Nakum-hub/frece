@@ -1,11 +1,9 @@
 """Integration tests for FRECE."""
 
-import hashlib
 import io
 import json
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -16,8 +14,9 @@ from frece.sandbox import InputValidator, SandboxedExecutor
 from frece.parallel import ParallelProcessor
 from frece.cli import check_tools, main
 from frece.config import Config
+from frece.partition import Partition
 from frece.recovery import DeletedFileRecovery
-from frece.errors import FreceError, CustodyError
+from frece.errors import FreceError
 
 
 class TestIntegration:
@@ -283,7 +282,7 @@ class TestIntegration:
         img.write_bytes(b"\x00" * 512)
 
         monkeypatch.setattr(
-            "frece.recovery.subprocess.run",
+            "frece.recovery.subprocess.Popen",
             lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError()),
         )
 
@@ -313,15 +312,29 @@ class TestIntegration:
         recovery = DeletedFileRecovery()
         fake_fls = "r/r * 42:\tdeleted_photo.jpg\nr/r * 99:\tdoc.pdf\n"
 
-        with patch("frece.recovery.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=fake_fls,
-                stderr="",
-            )
+        with patch.object(recovery, "_iter_fls_lines", return_value=iter(fake_fls.splitlines())):
             entries = recovery.scan_deleted(temp_dir / "img.dd")
 
         assert len(entries) == 2
         inode_list = [entry.inode for entry in entries]
         assert 42 in inode_list
         assert 99 in inode_list
+
+    def test_cli_partitions_command(self, monkeypatch, capsys):
+        """partitions command must emit JSON rows from the partition module."""
+        monkeypatch.setattr(
+            "frece.cli.list_partitions",
+            lambda image: [
+                Partition(
+                    slot="001",
+                    start_sector=2048,
+                    end_sector=4095,
+                    length_sectors=2048,
+                    description="Linux (0x83)",
+                )
+            ],
+        )
+
+        assert main(["partitions", "disk.dd"]) == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output[0]["start_sector"] == 2048

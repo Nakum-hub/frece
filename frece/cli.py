@@ -1,8 +1,9 @@
 """FRECE CLI entrypoint."""
 
 import argparse
-import json
 import getpass
+import json
+import os
 import subprocess
 import sys
 from dataclasses import asdict
@@ -13,9 +14,15 @@ from frece import __version__
 from frece.acquisition import EvidenceAcquisition
 from frece.carver import StreamingCarver
 from frece.config import load_config
-from frece.custody import CustodyDatabase, create_case_secret_key, get_case_secret_key
-from frece.errors import CustodyError, FreceError
+from frece.custody import (
+    CustodyDatabase,
+    create_case_secret_key,
+    get_case_secret_key,
+    rotate_case_secret_key,
+)
+from frece.errors import AcquisitionError, CustodyError, FreceError, RecoveryError
 from frece.logging import setup_logging
+from frece.partition import list_partitions
 from frece.recovery import DeletedFileRecovery
 from frece.sandbox import InputValidator
 
@@ -48,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
             return handle_scan(args)
         if args.command == "hash":
             return handle_hash(args)
+        if args.command == "partitions":
+            return handle_partitions(args)
         if args.command == "recover":
             return handle_recover(args)
         if args.command == "acquire":
@@ -88,6 +97,10 @@ def validate_cli_args(args: argparse.Namespace) -> None:
             args.output = InputValidator.validate_path(str(args.output))
         return
 
+    if args.command == "partitions":
+        args.image = InputValidator.validate_path(str(args.image))
+        return
+
     if args.command == "hash":
         args.source = InputValidator.validate_path(str(args.source))
         if args.output is not None:
@@ -95,8 +108,12 @@ def validate_cli_args(args: argparse.Namespace) -> None:
         return
 
     if args.command == "acquire":
-        args.source = str(InputValidator.validate_path(args.source))
-        args.output = InputValidator.validate_path(str(args.output))
+        source_str = str(args.source)
+        InputValidator.validate_path(source_str)
+        output_path = InputValidator.validate_path(str(args.output))
+        args.source = source_str
+        args.output = output_path
+        EvidenceAcquisition._assert_safe_output_target(source_str, output_path)
         return
 
     if args.command == "report":
@@ -177,6 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     carve_parser.add_argument("--no-verify", action="store_true")
     carve_parser.add_argument("--chunk-size", type=int)
     carve_parser.add_argument("--max-signature-length", type=int)
+    carve_parser.add_argument("--max-video-size", type=int)
 
     scan_parser = subparsers.add_parser(
         "scan",
@@ -201,6 +219,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Filter by fls entry type: r=regular, d=directory",
     )
+    scan_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=0,
+        help="Timeout in seconds for Sleuth Kit commands (0 = unlimited)",
+    )
+
+    partitions_parser = subparsers.add_parser(
+        "partitions",
+        help="List partition offsets from an image with mmls",
+    )
+    partitions_parser.add_argument("image", type=Path, help="Path to forensic image")
 
     hash_parser = subparsers.add_parser(
         "hash",
@@ -239,6 +269,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="filter_type",
         default=None,
         help="Comma-separated file types to keep, e.g. jpg,pdf,docx",
+    )
+    recover_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=0,
+        help="Timeout in seconds for Sleuth Kit commands (0 = unlimited)",
     )
 
     acquire_parser = subparsers.add_parser(
@@ -288,6 +324,10 @@ def build_parser() -> argparse.ArgumentParser:
     case_verify.add_argument("--evidence-id")
     case_verify.add_argument("--source")
 
+    case_rotate = case_subparsers.add_parser("rotate-key", help="Rotate a case HMAC key")
+    case_rotate.add_argument("case_name")
+    case_rotate.add_argument("--root", type=Path)
+
     report_parser = subparsers.add_parser(
         "report",
         help="Generate a consolidated case investigation report",
@@ -310,12 +350,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _write_text_output(output_path: Path, output_str: str, error_cls, context: str) -> None:
+    """Write text output atomically enough for forensic logs and manifests."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with output_path.open("w", encoding="utf-8") as handle:
+            handle.write(output_str)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError as exc:
+        raise error_cls(
+            f"Cannot write {context}: {output_path}",
+            remediation="Check output directory permissions and disk space",
+        ) from exc
+
+
 def check_tools() -> int:
     """Check availability of required tools."""
     tools_to_check = {
         "fls": (["fls", "-V"], "The Sleuth Kit"),
         "icat": (["icat", "-V"], "The Sleuth Kit"),
         "istat": (["istat", "-V"], "The Sleuth Kit"),
+        "mmls": (["mmls", "-V"], "The Sleuth Kit"),
         "file": (["file", "--version"], "file utility"),
         "sha256sum": (["sha256sum", "--version"], "GNU coreutils"),
     }
@@ -344,6 +400,14 @@ def check_tools() -> int:
             print(f"{tool:20} TIMEOUT")
             all_found = False
 
+    try:
+        import magic  # noqa: F401
+
+        print(f"{'python-magic':20} OK")
+    except ImportError:
+        print(f"{'python-magic':20} NOT FOUND - pip install python-magic")
+        all_found = False
+
     if all_found:
         print("\nAll required tools found!")
         return 0
@@ -359,6 +423,8 @@ def handle_carve(args: argparse.Namespace) -> int:
         config.chunk_size = args.chunk_size
     if args.max_signature_length is not None:
         config.max_signature_length = args.max_signature_length
+    if args.max_video_size is not None:
+        config.max_video_size = args.max_video_size
 
     carver = StreamingCarver(config)
     manifest = carver.carve(args.source, args.output, verify=not args.no_verify)
@@ -373,7 +439,8 @@ def handle_carve(args: argparse.Namespace) -> int:
 def handle_recover(args: argparse.Namespace) -> int:
     """Handle the recover command."""
     logger = setup_logging(args.log_dir, name="frece.recovery")
-    recovery = DeletedFileRecovery(logger)
+    config = load_config()
+    recovery = DeletedFileRecovery(logger, config=config, timeout=args.timeout)
 
     inodes = None
     if args.inodes:
@@ -412,7 +479,8 @@ def handle_recover(args: argparse.Namespace) -> int:
 
 def handle_acquire(args: argparse.Namespace) -> int:
     """Handle the acquire command."""
-    acquisition = EvidenceAcquisition(setup_logging(name="frece.acquire"))
+    config = load_config()
+    acquisition = EvidenceAcquisition(setup_logging(name="frece.acquire"), config=config)
     metadata = acquisition.acquire_device(
         args.source,
         args.output,
@@ -426,7 +494,8 @@ def handle_acquire(args: argparse.Namespace) -> int:
 def handle_scan(args: argparse.Namespace) -> int:
     """Handle the scan command - list deleted files, no extraction."""
     logger = setup_logging(name="frece.scan")
-    recovery = DeletedFileRecovery(logger)
+    config = load_config()
+    recovery = DeletedFileRecovery(logger, config=config, timeout=args.timeout)
     entries = recovery.scan_deleted(args.image, image_offset=args.offset)
 
     if args.filter_type:
@@ -451,8 +520,7 @@ def handle_scan(args: argparse.Namespace) -> int:
 
     output_str = json.dumps(data, indent=2)
     if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(output_str)
+        _write_text_output(args.output, output_str, RecoveryError, "scan output")
         print(f"Scan saved to {args.output} ({len(entries)} deleted entries)")
     else:
         print(output_str)
@@ -470,12 +538,18 @@ def handle_hash(args: argparse.Namespace) -> int:
     output_str = json.dumps(result, indent=2)
 
     if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(output_str)
+        _write_text_output(args.output, output_str, AcquisitionError, "hash output")
         print(f"Hash written to {args.output}")
     else:
         print(output_str)
 
+    return 0
+
+
+def handle_partitions(args: argparse.Namespace) -> int:
+    """Handle the partitions command."""
+    partitions = [asdict(partition) for partition in list_partitions(args.image)]
+    print(json.dumps(partitions, indent=2))
     return 0
 
 
@@ -494,14 +568,17 @@ def handle_case(args: argparse.Namespace, extras: list[str]) -> int:
     """Handle case subcommands."""
     if args.case_command == "create":
         case_dir = resolve_case_dir(args.case_name, args.root)
-        create_case_secret_key(case_dir)
-        CustodyDatabase(case_dir / "custody.db", get_case_secret_key(case_dir))
+        create_case_secret_key(case_dir, case_name=args.case_name)
+        CustodyDatabase(
+            case_dir / "custody.db",
+            get_case_secret_key(case_dir, case_name=args.case_name),
+        )
         print(json.dumps({"case_dir": str(case_dir)}, indent=2))
         return 0
 
     if args.case_command == "log":
         case_dir = resolve_case_dir(args.case_name, args.root)
-        custody_db = load_custody_db(case_dir)
+        custody_db = load_custody_db(case_dir, case_name=args.case_name)
         details = parse_case_details(args.details, args.detail, extras)
         entry = custody_db.log_event(
             event_type=args.event_type,
@@ -516,9 +593,15 @@ def handle_case(args: argparse.Namespace, extras: list[str]) -> int:
         case_dir = resolve_case_dir(args.case_name, args.root)
         return verify_custody_case(case_dir, args.evidence_id, args.source)
 
+    if args.case_command == "rotate-key":
+        case_dir = resolve_case_dir(args.case_name, args.root)
+        key_path = rotate_case_secret_key(case_dir, case_name=args.case_name)
+        print(json.dumps({"case_dir": str(case_dir), "key_path": str(key_path)}, indent=2))
+        return 0
+
     raise CustodyError(
         "Missing case subcommand",
-        remediation="Use 'frece case create|log|verify ...'",
+        remediation="Use 'frece case create|log|verify|rotate-key ...'",
     )
 
 
@@ -552,14 +635,18 @@ def handle_report(args: argparse.Namespace) -> int:
     for manifest_path in sorted(case_dir.rglob("carve_manifest.json")):
         try:
             report["carve_manifests"].append(json.loads(manifest_path.read_text()))
-        except Exception:
-            pass
+        except Exception as exc:
+            report.setdefault("manifest_errors", []).append(
+                {"path": str(manifest_path), "error": str(exc)}
+            )
 
     for manifest_path in sorted(case_dir.rglob("recovery_manifest.json")):
         try:
             report["recovery_manifests"].append(json.loads(manifest_path.read_text()))
-        except Exception:
-            pass
+        except Exception as exc:
+            report.setdefault("manifest_errors", []).append(
+                {"path": str(manifest_path), "error": str(exc)}
+            )
 
     if args.report_format == "text":
         lines = [
@@ -585,12 +672,8 @@ def handle_report(args: argparse.Namespace) -> int:
         output_str = json.dumps(report, indent=2)
 
     if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(output_str)
-        if args.report_format == "text":
-            print(f"Report written to {args.output}")
-        else:
-            print(f"Report written to {args.output}")
+        _write_text_output(args.output, output_str, CustodyError, "report output")
+        print(f"Report written to {args.output}")
     else:
         print(output_str)
 
@@ -604,7 +687,7 @@ def resolve_case_dir(case_name: str, root: Path | None) -> Path:
     return case_root / case_name
 
 
-def load_custody_db(case_dir: Path) -> CustodyDatabase:
+def load_custody_db(case_dir: Path, case_name: str | None = None) -> CustodyDatabase:
     """Load an existing custody database for a case."""
     db_path = case_dir / "custody.db"
     if not db_path.exists():
@@ -613,7 +696,7 @@ def load_custody_db(case_dir: Path) -> CustodyDatabase:
             remediation="Create the case first or restore the custody database.",
         )
 
-    secret_key = get_case_secret_key(case_dir, create=False)
+    secret_key = get_case_secret_key(case_dir, case_name=case_name, create=False)
     return CustodyDatabase(db_path, secret_key, initialize=False)
 
 
@@ -623,7 +706,7 @@ def verify_custody_case(
     source_hash: str | None,
 ) -> int:
     """Verify custody integrity for an existing case directory."""
-    custody_db = load_custody_db(case_dir)
+    custody_db = load_custody_db(case_dir, case_name=case_dir.name)
     total, tampered = custody_db.verify_database()
 
     result = {

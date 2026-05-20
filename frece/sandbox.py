@@ -13,7 +13,7 @@ class InputValidator:
 
     MAX_PATH_LENGTH = 4096
     MAX_CASE_NAME_LENGTH = 255
-    DANGEROUS_CHARS = {"<", ">", "|", "&", ";", "`", "$", "(", ")", "{", "}"}
+    DANGEROUS_CHARS = {"<", ">", "|", "&", ";", "`", "$", "{", "}"}
 
     @staticmethod
     def validate_path(path_str: str, max_length: int = 4096) -> Path:
@@ -165,7 +165,7 @@ class SandboxedExecutor:
 
             return result
 
-        except subprocess.TimeoutExpired as e:
+        except subprocess.TimeoutExpired:
             self.logger.error(f"Command timeout: {tool_name}")
             raise
         except FileNotFoundError as e:
@@ -211,4 +211,4 @@ class SandboxedExecutor:
                 command.append(str(value))
 
         result = self.run_command(command, timeout=timeout, check=True)
-        return result.stdout
+        return str(result.stdout)

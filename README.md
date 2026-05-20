@@ -24,6 +24,12 @@ Linux-first forensic CLI for evidence acquisition, file carving, deleted-file re
 pip install -e .
 ```
 
+Linux package prerequisites:
+
+```bash
+sudo apt-get install sleuthkit libmagic1 file coreutils
+```
+
 ## Deployment Gate
 
 Run these on the target Linux host before operational use:
@@ -68,7 +74,8 @@ frece custody verify ~/.frece/cases/Case-2024-001 --evidence-id EV001 --source a
 ### Run the test suite
 
 ```bash
-pytest tests/ -v
+pytest -m "not acceptance" -q
+make test-count
 ```
 
 ### Run code quality tools
@@ -81,9 +88,9 @@ mypy frece
 
 ## Verified State
 
-- Local verification command: `py -3.13 -m pytest -q`
-- Current result: `83 passed, 2 skipped`
-- Defined tests: `85` across `6` test modules
+- Current unit-suite result: `118 passed, 1 skipped`
+- CI snapshot command: `make test-count`
+- Acceptance tests live under `tests/acceptance/` and run separately on a provisioned Linux host with Sleuth Kit installed
 - `frece tool-status` correctly returns non-zero until required Linux tools are installed
 
 ## Core Modules

@@ -34,12 +34,16 @@ class TestInputValidator:
             "path;rm -rf /",
             "path`whoami`",
             "path$(id)",
-            "path(command)",
         ]
 
         for path in dangerous_paths:
             with pytest.raises(SandboxError):
                 InputValidator.validate_path(path)
+
+    def test_parentheses_in_path_allowed(self):
+        """Legitimate forensic paths may contain parentheses."""
+        result = InputValidator.validate_path("/mnt/evidence/file (copy).jpg")
+        assert result.name == "file (copy).jpg"
 
     def test_validate_case_name_valid(self):
         """Test valid case names."""
