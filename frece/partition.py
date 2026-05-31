@@ -35,9 +35,22 @@ def list_partitions(image_path: Path) -> list[Partition]:
         ) from exc
 
     if result.returncode != 0:
+        stderr_msg = result.stderr.strip()
+        if not stderr_msg:
+            stderr_msg = (
+                "mmls could not detect a partition table. "
+                "The image may be a raw filesystem without a partition table. "
+                "Use 'frece recover' or 'frece scan' directly on the image, "
+                "or specify the filesystem offset with --offset."
+            )
         raise RecoveryError(
-            f"mmls failed: {result.stderr.strip()}",
-            remediation="Verify image path and format",
+            f"mmls failed: {stderr_msg}",
+            remediation=(
+                "Verify the image path and format. "
+                "If this is a raw filesystem image (ext2/3/4, NTFS) without a "
+                "partition table, 'frece partitions' does not apply – use "
+                "'frece scan' or 'frece recover' directly."
+            ),
         )
 
     partitions: list[Partition] = []

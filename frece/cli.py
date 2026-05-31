@@ -3,7 +3,9 @@
 import argparse
 import getpass
 import json
+import math
 import os
+import re
 import subprocess
 import sys
 from dataclasses import asdict
@@ -13,6 +15,7 @@ from pathlib import Path
 from frece import __version__
 from frece.acquisition import EvidenceAcquisition
 from frece.carver import StreamingCarver
+from frece.classifier import ForensicCategory, bulk_classify, classify_file, shannon_entropy
 from frece.config import load_config
 from frece.custody import (
     CustodyDatabase,
@@ -25,6 +28,12 @@ from frece.logging import setup_logging
 from frece.partition import list_partitions
 from frece.recovery import DeletedFileRecovery
 from frece.sandbox import InputValidator
+from frece.timeline import (
+    build_timeline,
+    events_to_csv,
+    events_to_json,
+    events_to_text,
+)
 
 
 def _utc_now_iso() -> str:
@@ -67,6 +76,16 @@ def main(argv: list[str] | None = None) -> int:
             return handle_custody(args)
         if args.command == "case":
             return handle_case(args, extras)
+        if args.command == "timeline":
+            return handle_timeline(args)
+        if args.command == "search":
+            return handle_search(args)
+        if args.command == "entropy":
+            return handle_entropy(args)
+        if args.command == "fsstat":
+            return handle_fsstat(args)
+        if args.command == "classify":
+            return handle_classify(args)
     except FreceError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -109,6 +128,8 @@ def validate_cli_args(args: argparse.Namespace) -> None:
 
     if args.command == "acquire":
         source_str = str(args.source)
+        # Validate source path for injection characters but keep as str
+        # (EvidenceAcquisition.acquire_device expects str for block-device paths)
         InputValidator.validate_path(source_str)
         output_path = InputValidator.validate_path(str(args.output))
         args.source = source_str
@@ -224,6 +245,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="Timeout in seconds for Sleuth Kit commands (0 = unlimited)",
+    )
+    scan_parser.add_argument(
+        "--mactime",
+        action="store_true",
+        default=False,
+        help="Include MAC timestamps (mtime/atime/ctime/crtime) via fls -m",
+    )
+    scan_parser.add_argument(
+        "--all",
+        dest="all_entries",
+        action="store_true",
+        default=False,
+        help="Include all entries, not just deleted ones (use with --mactime)",
     )
 
     partitions_parser = subparsers.add_parser(
@@ -342,9 +376,130 @@ def build_parser() -> argparse.ArgumentParser:
     )
     report_parser.add_argument(
         "--format",
-        choices=["json", "text"],
+        choices=["json", "text", "html"],
         default="json",
         dest="report_format",
+    )
+
+    # ── timeline ─────────────────────────────────────────────────────────────
+    timeline_parser = subparsers.add_parser(
+        "timeline",
+        help="Synthesise a MAC-time forensic timeline for a case",
+    )
+    timeline_parser.add_argument("case_name", help="Case name")
+    timeline_parser.add_argument("--root", type=Path, default=None)
+    timeline_parser.add_argument(
+        "--format",
+        choices=["json", "csv", "text"],
+        default="text",
+        dest="timeline_format",
+    )
+    timeline_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write timeline to file (default: stdout)",
+    )
+    timeline_parser.add_argument(
+        "--mactime-file",
+        type=Path,
+        default=None,
+        dest="mactime_file",
+        help="Supplemental fls -m body file to merge into the timeline",
+    )
+
+    # ── search ────────────────────────────────────────────────────────────────
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Keyword / regex search across recovered or carved files",
+    )
+    search_parser.add_argument(
+        "directory",
+        type=Path,
+        help="Directory of recovered/carved files to search",
+    )
+    search_parser.add_argument(
+        "--keyword",
+        required=True,
+        help="Search string or regular expression",
+    )
+    search_parser.add_argument(
+        "--regex",
+        action="store_true",
+        default=False,
+        help="Treat --keyword as a Python regular expression",
+    )
+    search_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write search results to JSON file",
+    )
+    search_parser.add_argument(
+        "--context-lines",
+        type=int,
+        default=1,
+        dest="context_lines",
+        help="Number of context lines around each hit (default: 1)",
+    )
+
+    # ── entropy ───────────────────────────────────────────────────────────────
+    entropy_parser = subparsers.add_parser(
+        "entropy",
+        help="Compute Shannon entropy for a file or directory of files",
+    )
+    entropy_parser.add_argument(
+        "source",
+        type=Path,
+        help="File or directory to analyse",
+    )
+    entropy_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write results to JSON file",
+    )
+    entropy_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=7.0,
+        help="Entropy threshold above which files are flagged (default: 7.0)",
+    )
+
+    # ── fsstat ────────────────────────────────────────────────────────────────
+    fsstat_parser = subparsers.add_parser(
+        "fsstat",
+        help="Show filesystem metadata and statistics for a forensic image",
+    )
+    fsstat_parser.add_argument("image", type=Path, help="Path to forensic image")
+    fsstat_parser.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="Sector offset for the filesystem (default: 0)",
+    )
+
+    # ── classify ─────────────────────────────────────────────────────────────
+    classify_parser = subparsers.add_parser(
+        "classify",
+        help="Classify files in a directory by forensic category and entropy",
+    )
+    classify_parser.add_argument(
+        "directory",
+        type=Path,
+        help="Directory to classify",
+    )
+    classify_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write classification results to JSON file",
+    )
+    classify_parser.add_argument(
+        "--priority",
+        choices=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+        default=None,
+        help="Show only files at this priority level or above",
     )
 
     return parser
@@ -418,6 +573,7 @@ def check_tools() -> int:
 
 def handle_carve(args: argparse.Namespace) -> int:
     """Handle the carve command."""
+    logger = setup_logging(name="frece.carve")
     config = load_config()
     if args.chunk_size is not None:
         config.chunk_size = args.chunk_size
@@ -432,6 +588,15 @@ def handle_carve(args: argparse.Namespace) -> int:
     output = manifest.to_dict()
     output["manifest_path"] = str(args.output / "carve_manifest.json")
     output["files_carved"] = len(manifest.carved_files)
+    logger.info(
+        json.dumps(
+            {
+                "event": "CARVE_COMPLETE",
+                "source": str(args.source),
+                "files_carved": len(manifest.carved_files),
+            }
+        )
+    )
     print(json.dumps(output, indent=2))
     return 0
 
@@ -496,32 +661,67 @@ def handle_scan(args: argparse.Namespace) -> int:
     logger = setup_logging(name="frece.scan")
     config = load_config()
     recovery = DeletedFileRecovery(logger, config=config, timeout=args.timeout)
-    entries = recovery.scan_deleted(args.image, image_offset=args.offset)
 
-    if args.filter_type:
-        filter_type = args.filter_type.lower()
-        entries = [entry for entry in entries if entry.entry_type == filter_type]
+    all_entries_flag = getattr(args, "all_entries", False)
+    use_mactime = getattr(args, "mactime", False)
 
-    data = {
-        "source": str(args.image),
-        "timestamp": _utc_now_iso(),
-        "total_deleted": len(entries),
-        "entries": [
-            {
-                "inode": entry.inode,
-                "inode_token": entry.inode_token,
-                "type": entry.entry_type,
-                "name": entry.name,
-                "reallocated": entry.allocated,
-            }
-            for entry in entries
-        ],
-    }
+    if use_mactime:
+        entries = recovery.scan_mactime(
+            args.image,
+            image_offset=args.offset,
+            deleted_only=not all_entries_flag,
+        )
+        if args.filter_type:
+            ft = args.filter_type.lower()
+            entries = [e for e in entries if e.entry_type == ft]
+
+        data = {
+            "source": str(args.image),
+            "timestamp": _utc_now_iso(),
+            "mode": "mactime",
+            "total_entries": len(entries),
+            "entries": [
+                {
+                    "inode": e.inode,
+                    "inode_token": e.inode_token,
+                    "type": e.entry_type,
+                    "name": e.name,
+                    "size": e.size,
+                    "mtime": e.mtime,
+                    "atime": e.atime,
+                    "ctime": e.ctime,
+                    "crtime": e.crtime,
+                }
+                for e in entries
+            ],
+        }
+    else:
+        entries = recovery.scan_deleted(args.image, image_offset=args.offset)
+        if args.filter_type:
+            filter_type = args.filter_type.lower()
+            entries = [entry for entry in entries if entry.entry_type == filter_type]
+
+        data = {
+            "source": str(args.image),
+            "timestamp": _utc_now_iso(),
+            "mode": "standard",
+            "total_deleted": len(entries),
+            "entries": [
+                {
+                    "inode": entry.inode,
+                    "inode_token": entry.inode_token,
+                    "type": entry.entry_type,
+                    "name": entry.name,
+                    "reallocated": entry.allocated,
+                }
+                for entry in entries
+            ],
+        }
 
     output_str = json.dumps(data, indent=2)
     if args.output:
         _write_text_output(args.output, output_str, RecoveryError, "scan output")
-        print(f"Scan saved to {args.output} ({len(entries)} deleted entries)")
+        print(f"Scan saved to {args.output} ({len(entries)} entries)")
     else:
         print(output_str)
 
@@ -606,7 +806,7 @@ def handle_case(args: argparse.Namespace, extras: list[str]) -> int:
 
 
 def handle_report(args: argparse.Namespace) -> int:
-    """Handle the report command - consolidated case summary."""
+    """Handle the report command — consolidated case summary."""
     case_dir = resolve_case_dir(args.case_name, args.root)
     if not case_dir.exists():
         print(f"Case directory not found: {case_dir}", file=sys.stderr)
@@ -617,6 +817,7 @@ def handle_report(args: argparse.Namespace) -> int:
         "case_dir": str(case_dir),
         "generated_at": _utc_now_iso(),
         "custody_entries": 0,
+        "custody_verified": False,
         "carve_manifests": [],
         "recovery_manifests": [],
     }
@@ -624,7 +825,7 @@ def handle_report(args: argparse.Namespace) -> int:
     db_path = case_dir / "custody.db"
     if db_path.exists():
         try:
-            custody_db = load_custody_db(case_dir)
+            custody_db = load_custody_db(case_dir, case_name=args.case_name)
             total, _ = custody_db.verify_database()
             report["custody_entries"] = total
             report["custody_verified"] = True
@@ -648,26 +849,10 @@ def handle_report(args: argparse.Namespace) -> int:
                 {"path": str(manifest_path), "error": str(exc)}
             )
 
-    if args.report_format == "text":
-        lines = [
-            f"Case Report: {args.case_name}",
-            f"Generated:   {report['generated_at']}",
-            f"Case dir:    {report['case_dir']}",
-            f"Custody entries: {report['custody_entries']}",
-            f"Carve manifests: {len(report['carve_manifests'])}",
-            f"Recovery manifests: {len(report['recovery_manifests'])}",
-        ]
-        for carve_manifest in report["carve_manifests"]:
-            carved = carve_manifest.get("carved_files", [])
-            lines.append(
-                f"  Carve: {carve_manifest.get('source', '?')} -> {len(carved)} files"
-            )
-        for recovery_manifest in report["recovery_manifests"]:
-            recovered = recovery_manifest.get("recovered_files", [])
-            lines.append(
-                f"  Recovery: {recovery_manifest.get('source', '?')} -> {len(recovered)} files"
-            )
-        output_str = "\n".join(lines)
+    if args.report_format == "html":
+        output_str = _render_html_report(report, args.case_name)
+    elif args.report_format == "text":
+        output_str = _render_text_report(report)
     else:
         output_str = json.dumps(report, indent=2)
 
@@ -680,10 +865,498 @@ def handle_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_text_report(report: dict) -> str:
+    """Render a human-readable text report."""
+    lines = [
+        "=" * 70,
+        f"  FRECE FORENSIC INVESTIGATION REPORT",
+        "=" * 70,
+        f"Case Name    : {report['case_name']}",
+        f"Case Dir     : {report['case_dir']}",
+        f"Generated    : {report['generated_at']}",
+        f"Custody OK   : {report['custody_verified']}",
+        f"Custody Entries: {report['custody_entries']}",
+        "-" * 70,
+    ]
+
+    total_carved = sum(
+        len(m.get("carved_files", [])) for m in report["carve_manifests"]
+    )
+    total_recovered = sum(
+        len(m.get("recovered_files", [])) for m in report["recovery_manifests"]
+    )
+
+    lines.append(f"Carved Files   : {total_carved}")
+    lines.append(f"Recovered Files: {total_recovered}")
+    lines.append("")
+
+    # File-type breakdown across all artifacts
+    type_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
+    priority_counts: dict[str, int] = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+
+    for m in report["carve_manifests"]:
+        for f in m.get("carved_files", []):
+            ftype = f.get("file_type", "unknown")
+            type_counts[ftype] = type_counts.get(ftype, 0) + 1
+            cat = f.get("forensic_category", "unknown")
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+            pri = f.get("forensic_priority", "LOW")
+            priority_counts[pri] = priority_counts.get(pri, 0) + 1
+
+    for m in report["recovery_manifests"]:
+        for f in m.get("recovered_files", []):
+            ftype = f.get("file_type", "unknown")
+            type_counts[ftype] = type_counts.get(ftype, 0) + 1
+            cat = f.get("forensic_category", "unknown")
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+            pri = f.get("forensic_priority", "LOW")
+            priority_counts[pri] = priority_counts.get(pri, 0) + 1
+
+    lines.append("TRIAGE PRIORITIES:")
+    for pri in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        count = priority_counts.get(pri, 0)
+        bar = "█" * min(count, 40)
+        lines.append(f"  {pri:<10} {count:>5}  {bar}")
+
+    lines.append("")
+    lines.append("FILE CATEGORIES:")
+    for cat, count in sorted(category_counts.items(), key=lambda x: -x[1]):
+        bar = "█" * min(count, 40)
+        lines.append(f"  {cat:<15} {count:>5}  {bar}")
+
+    lines.append("")
+    lines.append("FILE TYPES (top 15):")
+    for ftype, count in sorted(type_counts.items(), key=lambda x: -x[1])[:15]:
+        lines.append(f"  {ftype:<15} {count:>5}")
+
+    lines.append("=" * 70)
+    return "\n".join(lines)
+
+
+def _render_html_report(report: dict, case_name: str) -> str:
+    """Render a professional HTML case report."""
+    total_carved = sum(len(m.get("carved_files", [])) for m in report["carve_manifests"])
+    total_recovered = sum(
+        len(m.get("recovered_files", [])) for m in report["recovery_manifests"]
+    )
+    custody_ok = "✅ Verified" if report.get("custody_verified") else "⚠️ Not verified"
+
+    # Aggregate stats
+    type_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
+    priority_counts: dict[str, int] = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    encrypted_count = 0
+
+    all_artifacts = []
+    for m in report["carve_manifests"]:
+        for f in m.get("carved_files", []):
+            all_artifacts.append(f)
+    for m in report["recovery_manifests"]:
+        for f in m.get("recovered_files", []):
+            all_artifacts.append(f)
+
+    for f in all_artifacts:
+        ftype = f.get("file_type", "unknown")
+        type_counts[ftype] = type_counts.get(ftype, 0) + 1
+        cat = f.get("forensic_category", "unknown")
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+        pri = f.get("forensic_priority", "LOW")
+        priority_counts[pri] = priority_counts.get(pri, 0) + 1
+        if f.get("possibly_encrypted"):
+            encrypted_count += 1
+
+    top_types = sorted(type_counts.items(), key=lambda x: -x[1])[:12]
+    type_rows = "".join(
+        f"<tr><td>{t}</td><td>{c}</td></tr>" for t, c in top_types
+    )
+    cat_rows = "".join(
+        f"<tr><td>{c}</td><td>{cnt}</td></tr>"
+        for c, cnt in sorted(category_counts.items(), key=lambda x: -x[1])
+    )
+
+    crit = priority_counts.get("CRITICAL", 0)
+    high = priority_counts.get("HIGH", 0)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRECE Case Report — {case_name}</title>
+<style>
+  body{{font-family:'Segoe UI',Arial,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:0}}
+  .header{{background:linear-gradient(135deg,#1a2332,#0f2027);padding:40px;border-bottom:3px solid #e05a00}}
+  .header h1{{margin:0;font-size:2em;color:#fff;letter-spacing:2px}}
+  .header p{{margin:8px 0 0;color:#8b949e;font-size:.9em}}
+  .container{{max-width:1100px;margin:0 auto;padding:30px 20px}}
+  .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:30px}}
+  .card{{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;text-align:center}}
+  .card .num{{font-size:2.4em;font-weight:700;color:#58a6ff}}
+  .card .label{{font-size:.85em;color:#8b949e;margin-top:4px;text-transform:uppercase;letter-spacing:1px}}
+  .card.critical .num{{color:#f85149}}
+  .card.high .num{{color:#e3b341}}
+  .card.encrypted .num{{color:#bc8cff}}
+  .section{{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:24px;margin-bottom:24px}}
+  .section h2{{margin:0 0 16px;font-size:1.1em;color:#58a6ff;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #30363d;padding-bottom:10px}}
+  table{{width:100%;border-collapse:collapse;font-size:.9em}}
+  th{{background:#1c2128;color:#8b949e;text-align:left;padding:8px 12px;font-weight:600;text-transform:uppercase;font-size:.8em}}
+  td{{padding:8px 12px;border-top:1px solid #21262d}}
+  tr:hover td{{background:#1c2128}}
+  .badge{{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.8em;font-weight:600}}
+  .badge-ok{{background:#1a3a1a;color:#3fb950}}
+  .badge-warn{{background:#3a1a1a;color:#f85149}}
+  .footer{{text-align:center;padding:20px;color:#484f58;font-size:.8em;border-top:1px solid #21262d}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🔍 FRECE Forensic Investigation Report</h1>
+  <p>Case: <strong>{case_name}</strong> &nbsp;·&nbsp; Generated: {report["generated_at"]} &nbsp;·&nbsp; Chain of Custody: {custody_ok}</p>
+</div>
+<div class="container">
+  <div class="grid">
+    <div class="card"><div class="num">{total_carved + total_recovered}</div><div class="label">Total Artifacts</div></div>
+    <div class="card"><div class="num">{total_carved}</div><div class="label">Carved Files</div></div>
+    <div class="card"><div class="num">{total_recovered}</div><div class="label">Recovered Files</div></div>
+    <div class="card critical"><div class="num">{crit}</div><div class="label">Critical Priority</div></div>
+    <div class="card high"><div class="num">{high}</div><div class="label">High Priority</div></div>
+    <div class="card encrypted"><div class="num">{encrypted_count}</div><div class="label">Possibly Encrypted</div></div>
+  </div>
+
+  <div class="section">
+    <h2>File Categories</h2>
+    <table><tr><th>Category</th><th>Count</th></tr>{cat_rows}</table>
+  </div>
+
+  <div class="section">
+    <h2>Top File Types</h2>
+    <table><tr><th>Type</th><th>Count</th></tr>{type_rows}</table>
+  </div>
+
+  <div class="section">
+    <h2>Chain of Custody</h2>
+    <p>Entries: <strong>{report["custody_entries"]}</strong> &nbsp;·&nbsp; Status: <span class="badge {'badge-ok' if report.get('custody_verified') else 'badge-warn'}">{custody_ok}</span></p>
+  </div>
+</div>
+<div class="footer">Generated by FRECE v{__version__} — Forensic Recovery and Evidence Carving Engine</div>
+</body>
+</html>"""
+
+
+def handle_timeline(args: argparse.Namespace) -> int:
+    """Handle the timeline command."""
+    case_dir = resolve_case_dir(args.case_name, args.root)
+    if not case_dir.exists():
+        print(f"Case directory not found: {case_dir}", file=sys.stderr)
+        return 1
+
+    mactime_file = getattr(args, "mactime_file", None)
+    events = build_timeline(case_dir, mactime_file=mactime_file)
+
+    fmt = args.timeline_format
+    if fmt == "json":
+        output_str = events_to_json(events)
+    elif fmt == "csv":
+        output_str = events_to_csv(events)
+    else:
+        output_str = events_to_text(events)
+
+    if args.output:
+        _write_text_output(args.output, output_str, RecoveryError, "timeline output")
+        print(f"Timeline written to {args.output} ({len(events)} events)")
+    else:
+        print(output_str)
+
+    return 0
+
+
+def handle_search(args: argparse.Namespace) -> int:
+    """Handle the search command — keyword/regex search in recovered files."""
+    directory = args.directory
+    if not directory.exists():
+        print(f"Directory not found: {directory}", file=sys.stderr)
+        return 1
+
+    keyword = args.keyword
+    use_regex = args.regex
+    context_lines = args.context_lines
+
+    try:
+        pattern = re.compile(keyword, re.IGNORECASE) if use_regex else None
+    except re.error as exc:
+        print(f"Invalid regex: {exc}", file=sys.stderr)
+        return 1
+
+    results = []
+    text_extensions = {
+        ".txt", ".log", ".csv", ".json", ".xml", ".html", ".htm", ".rtf",
+        ".eml", ".md", ".py", ".sh", ".js", ".php", ".sql", ".conf", ".ini",
+        ".yaml", ".yml",
+    }
+
+    for filepath in sorted(directory.rglob("*")):
+        if not filepath.is_file():
+            continue
+        if filepath.suffix.lower() not in text_extensions and filepath.stat().st_size > 4 * 1024 * 1024:
+            continue
+
+        try:
+            content = filepath.read_bytes()
+            # Try UTF-8 first, then latin-1 as fallback
+            try:
+                text = content.decode("utf-8")
+            except UnicodeDecodeError:
+                text = content.decode("latin-1", errors="replace")
+        except OSError:
+            continue
+
+        lines = text.splitlines()
+        file_hits = []
+
+        for line_num, line in enumerate(lines, 1):
+            if pattern:
+                match = pattern.search(line)
+                hit = bool(match)
+            else:
+                hit = keyword.lower() in line.lower()
+
+            if hit:
+                start = max(0, line_num - 1 - context_lines)
+                end = min(len(lines), line_num + context_lines)
+                context = lines[start:end]
+                file_hits.append({
+                    "line": line_num,
+                    "match": line.strip()[:200],
+                    "context": [l.strip()[:200] for l in context],
+                })
+
+        if file_hits:
+            results.append({
+                "file": str(filepath),
+                "hits": len(file_hits),
+                "matches": file_hits[:50],  # cap per-file to 50
+            })
+
+    output = {
+        "keyword": keyword,
+        "regex": use_regex,
+        "directory": str(directory),
+        "files_searched": sum(1 for _ in directory.rglob("*") if _.is_file()),
+        "files_with_hits": len(results),
+        "results": results,
+    }
+
+    output_str = json.dumps(output, indent=2)
+    if args.output:
+        _write_text_output(args.output, output_str, RecoveryError, "search output")
+        print(f"Search complete: {len(results)} file(s) matched. Results in {args.output}")
+    else:
+        print(output_str)
+
+    return 0
+
+
+def handle_entropy(args: argparse.Namespace) -> int:
+    """Handle the entropy command — Shannon entropy analysis."""
+    source = args.source
+    threshold = args.threshold
+
+    if source.is_file():
+        targets = [source]
+    elif source.is_dir():
+        targets = sorted(f for f in source.rglob("*") if f.is_file())
+    else:
+        print(f"Source not found: {source}", file=sys.stderr)
+        return 1
+
+    results = []
+    flagged = 0
+
+    for filepath in targets:
+        try:
+            with filepath.open("rb") as fh:
+                sample = fh.read(65536)
+            entropy = shannon_entropy(sample)
+            size = filepath.stat().st_size
+            is_flagged = entropy >= threshold
+
+            if is_flagged:
+                flagged += 1
+
+            results.append({
+                "file": str(filepath),
+                "entropy": round(entropy, 4),
+                "size": size,
+                "flagged": is_flagged,
+                "label": (
+                    "ENCRYPTED/COMPRESSED" if entropy >= 7.5
+                    else "HIGH" if entropy >= 6.5
+                    else "MEDIUM" if entropy >= 3.0
+                    else "LOW"
+                ),
+            })
+        except OSError:
+            continue
+
+    output = {
+        "source": str(source),
+        "threshold": threshold,
+        "files_analysed": len(results),
+        "files_flagged": flagged,
+        "results": sorted(results, key=lambda r: -r["entropy"]),
+    }
+
+    output_str = json.dumps(output, indent=2)
+    if args.output:
+        _write_text_output(args.output, output_str, RecoveryError, "entropy output")
+        print(f"Entropy analysis: {flagged}/{len(results)} files above threshold {threshold}")
+    else:
+        print(output_str)
+
+    return 0
+
+
+def handle_fsstat(args: argparse.Namespace) -> int:
+    """Handle the fsstat command — show filesystem metadata."""
+    command = ["fsstat"]
+    if args.offset:
+        command.extend(["-o", str(args.offset)])
+    command.append(str(args.image))
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except FileNotFoundError:
+        print("fsstat not found — install The Sleuth Kit", file=sys.stderr)
+        return 1
+
+    if result.returncode != 0:
+        print(f"fsstat failed: {result.stderr.strip()}", file=sys.stderr)
+        return 1
+
+    # Parse key fields into structured JSON
+    fs_info: dict = {"image": str(args.image), "raw": result.stdout}
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        for key, pattern in (
+            ("fs_type", r"^File System Type:\s+(.+)"),
+            ("volume_name", r"^Volume Name:\s+(.+)"),
+            ("volume_id", r"^Volume ID:\s+(.+)"),
+            ("last_written", r"^Last Written at:\s+(.+)"),
+            ("last_checked", r"^Last Checked at:\s+(.+)"),
+            ("block_size", r"^Block Size:\s+(\d+)"),
+            ("total_inodes", r"^Inode Range:\s+\d+\s*-\s*(\d+)"),
+            ("total_blocks", r"^Block Range:\s+\d+\s*-\s*(\d+)"),
+            ("free_blocks", r"^Free Blocks:\s+(\d+)"),
+            ("free_inodes", r"^Free Inodes:\s+(\d+)"),
+        ):
+            m = re.match(pattern, line)
+            if m:
+                fs_info[key] = m.group(1).strip()
+
+    print(json.dumps(fs_info, indent=2))
+    return 0
+
+
+def _detect_type_for_classify(filepath: Path) -> str:
+    """Best-effort file type detection for classify command.
+
+    Priority: 1) carved-output suffix pattern (_jpeg / _pdf), 2) file extension,
+    3) python-magic MIME type.
+    """
+    # FRECE carver output filenames end with _<type>  e.g. 00000200_jpeg
+    name = filepath.name
+    if "_" in name:
+        suffix = name.rsplit("_", 1)[-1].lower()
+        if re.match(r"^[a-z0-9]{1,10}$", suffix):
+            return suffix
+
+    ext = filepath.suffix.lstrip(".").lower()
+    if ext:
+        # normalise common variants
+        return {"jpg": "jpeg", "tif": "tiff"}.get(ext, ext)
+
+    try:
+        import magic as _magic
+        mime = _magic.from_file(str(filepath), mime=True) or ""
+        # e.g. "image/jpeg" → "jpeg"
+        return mime.split("/")[-1].split(";")[0].strip()
+    except Exception:
+        return "bin"
+
+
+def handle_classify(args: argparse.Namespace) -> int:
+    """Handle the classify command — forensic categorisation of a directory."""
+    directory = args.directory
+    if not directory.is_dir():
+        print(f"Not a directory: {directory}", file=sys.stderr)
+        return 1
+
+    priority_filter = args.priority
+    priority_rank = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+    min_rank = priority_rank.get(priority_filter, 0) if priority_filter else 0
+
+    files = sorted(f for f in directory.rglob("*") if f.is_file())
+    results = []
+
+    for filepath in files:
+        ftype = _detect_type_for_classify(filepath)
+
+        try:
+            cls = classify_file(filepath, ftype)
+            rank = priority_rank.get(cls.forensic_priority, 1)
+            if rank < min_rank:
+                continue
+            results.append({
+                "file": str(filepath),
+                "file_type": ftype,
+                "category": cls.category.value,
+                "priority": cls.forensic_priority,
+                "entropy": cls.entropy,
+                "entropy_label": cls.entropy_label,
+                "possibly_encrypted": cls.possibly_encrypted,
+                "notes": cls.notes,
+                "size": filepath.stat().st_size,
+            })
+        except Exception:
+            continue
+
+    results.sort(key=lambda r: -priority_rank.get(r["priority"], 0))
+
+    output = {
+        "directory": str(directory),
+        "files_classified": len(results),
+        "critical": sum(1 for r in results if r["priority"] == "CRITICAL"),
+        "high": sum(1 for r in results if r["priority"] == "HIGH"),
+        "encrypted_suspected": sum(1 for r in results if r["possibly_encrypted"]),
+        "results": results,
+    }
+
+    output_str = json.dumps(output, indent=2)
+    if args.output:
+        _write_text_output(args.output, output_str, RecoveryError, "classify output")
+        print(
+            f"Classified {len(results)} files: "
+            f"{output['critical']} CRITICAL, {output['high']} HIGH, "
+            f"{output['encrypted_suspected']} possibly encrypted"
+        )
+    else:
+        print(output_str)
+
+    return 0
+
+
 def resolve_case_dir(case_name: str, root: Path | None) -> Path:
     """Resolve the case directory from the configured case root."""
     config = load_config()
     case_root = root if root is not None else config.case_root
+    case_root.mkdir(parents=True, exist_ok=True)
     return case_root / case_name
 
 

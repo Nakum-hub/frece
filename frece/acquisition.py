@@ -407,6 +407,10 @@ class EvidenceAcquisition:
     def _acquire_single_file(self, source_path: Path, output_dir: Path) -> dict:
         """Acquire a single file with hashing.
 
+        Streams the source file exactly once: hashes and copies simultaneously,
+        avoiding the two-pass read that the original implementation used.
+        Uses a unique temp name to be safe under parallel acquisition.
+
         Args:
             source_path: Source file path.
             output_dir: Output directory.
@@ -414,29 +418,40 @@ class EvidenceAcquisition:
         Returns:
             File metadata dict.
         """
+        import uuid
+
         sha256_hash = hashlib.sha256()
+        # Unique temp name so parallel acquisitions never collide on the same path
+        tmp_path = output_dir / f".acquiring_{uuid.uuid4().hex}_{source_path.name}.tmp"
+
         try:
-            with open(source_path, "rb") as f:
-                while chunk := f.read(self.config.chunk_size):
+            with open(source_path, "rb") as src, open(tmp_path, "wb") as dst:
+                while chunk := src.read(self.config.chunk_size):
                     sha256_hash.update(chunk)
+                    dst.write(chunk)
+                dst.flush()
+                os.fsync(dst.fileno())
         except OSError as e:
+            tmp_path.unlink(missing_ok=True)
+            if isinstance(e, FileNotFoundError):
+                raise AcquisitionError(
+                    f"Source not found: {source_path}",
+                    remediation="Verify the file path",
+                ) from e
             raise AcquisitionError(
-                f"Cannot read {source_path}",
-                remediation="Check file permissions",
+                f"Cannot acquire {source_path}",
+                remediation="Check file permissions and disk space",
             ) from e
 
         partial_hex = sha256_hash.hexdigest()[:8]
         output_file = output_dir / f"{partial_hex}_{source_path.name}"
 
         try:
-            with open(source_path, "rb") as src, open(output_file, "wb") as dst:
-                while chunk := src.read(self.config.chunk_size):
-                    dst.write(chunk)
-                dst.flush()
-                os.fsync(dst.fileno())
+            os.replace(tmp_path, output_file)
         except OSError as e:
+            tmp_path.unlink(missing_ok=True)
             raise AcquisitionError(
-                f"Cannot write {output_file}",
+                f"Cannot rename acquired file to {output_file}",
                 remediation="Check output directory permissions and disk space",
             ) from e
 

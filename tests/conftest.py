@@ -1,12 +1,27 @@
 """Pytest configuration and shared fixtures."""
 
 import io
+import os
 import struct
 import tempfile
 import zipfile
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clean_custody_globals(monkeypatch):
+    """Reset module-level globals that can leak between tests.
+
+    Ensures FRECE_KEY_STORE is removed from the environment and
+    the custody module's one-time-warning flag is reset so tests
+    are fully isolated regardless of execution order.
+    """
+    monkeypatch.delenv("FRECE_KEY_STORE", raising=False)
+
+    import frece.custody as _custody
+    monkeypatch.setattr(_custody, "_key_store_warning_shown", False)
 
 
 @pytest.fixture

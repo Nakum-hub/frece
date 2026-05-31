@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO, Generator
 
+from frece.classifier import classify_file
 from frece.errors import CarveError, ValidationError
 
 
@@ -28,6 +29,10 @@ class CarvedFile:
     sha256: str
     validation_passed: bool
     validation_notes: str = ""
+    entropy: float = 0.0
+    forensic_category: str = "unknown"
+    forensic_priority: str = "LOW"
+    possibly_encrypted: bool = False
 
 
 @dataclass
@@ -54,38 +59,101 @@ class CarveManifest:
 
 
 class SignatureDatabase:
-    """File signatures and validation rules."""
+    """File signatures and validation rules — 40+ forensic file types."""
 
-    SIGNATURES = {
+    # Primary byte-sequence signatures.
+    # Disambiguation into sub-types happens in StreamingCarver._disambiguate_type.
+    SIGNATURES: dict[bytes, str] = {
+        # ── Images ────────────────────────────────────────────────────────────
         b"\xff\xd8\xff": "jpeg",
         b"\x89PNG\r\n\x1a\n": "png",
-        b"PK\x03\x04": "zip",
-        b"\xff\xfb\x90\x00": "mp3",
-        b"\xff\xf3\x90\x00": "mp3",
-        b"\xff\xf2\x90\x00": "mp3",
-        b"ID3": "mp3",
-        b"RIFF": "riff",
-        b"%PDF": "pdf",
         b"GIF89a": "gif",
         b"GIF87a": "gif",
         b"BM": "bmp",
         b"II\x2a\x00": "tiff",
         b"MM\x00\x2a": "tiff",
-        b"SQLITE format": "sqlite",
-        b"\x00\x00\x00\x20ftypmp42": "mp4",
-        b"\x00\x00\x00\x1cftypM4V ": "mp4",
-        b"\x00\x00\x00\x1cftypisom": "mp4",
-        b"\x00\x00\x00\x1cftypqt  ": "mov",
+        b"8BPS": "psd",          # Adobe Photoshop
+        # WebP: starts with RIFF (handled via RIFF disambiguation)
+        # HEIC/HEIF: ftyp box, handled as heic_ftyp below
+
+        # ── Documents ─────────────────────────────────────────────────────────
+        b"%PDF": "pdf",
+        b"{\rtf": "rtf",
+        b"<?xml": "xml",
+        b"<!DOCTYPE html": "html",
+        b"<html": "html",
+
+        # ── Office / OLE compound document ────────────────────────────────────
+        b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1": "ole",  # DOC/XLS/PPT/MSG/PST
+
+        # ── Archives ──────────────────────────────────────────────────────────
+        b"PK\x03\x04": "zip",
+        b"7z\xBC\xAF\x27\x1C": "7z",
+        b"Rar!\x1A\x07\x00": "rar",        # RAR 4.x
+        b"Rar!\x1A\x07\x01\x00": "rar",    # RAR 5.x
+        b"\x1F\x8B": "gz",                  # gzip
+        b"BZh": "bz2",                      # bzip2
+        b"\xFD7zXZ\x00": "xz",             # XZ / LZMA2
+
+        # ── Audio / Video ─────────────────────────────────────────────────────
+        b"\xff\xfb": "mp3",
+        b"\xff\xf3": "mp3",
+        b"\xff\xf2": "mp3",
+        b"ID3": "mp3",
+        b"RIFF": "riff",                    # WAV / AVI / WebP (disambiguate)
+        b"fLaC": "flac",
+        b"OggS": "ogg",
+
+        # ── MPEG-4 / QuickTime ftyp boxes ─────────────────────────────────────
+        b"\x00\x00\x00\x18ftyp": "ftyp",   # covers MP4/MOV/M4V/HEIC/HEIF/…
+        b"\x00\x00\x00\x1cftyp": "ftyp",
+        b"\x00\x00\x00\x14ftyp": "ftyp",
+        b"\x00\x00\x00\x20ftyp": "ftyp",
+        b"\x00\x00\x00\x24ftyp": "ftyp",
+
+        # ── Executables ───────────────────────────────────────────────────────
+        b"MZ": "pe",                        # Windows PE: EXE / DLL / SYS / …
+        b"\x7FELF": "elf",                  # Linux / Unix ELF
+
+        # ── Windows forensic artifacts ────────────────────────────────────────
+        b"ElfFile\x00": "evtx",            # Windows Event Log (.evtx)
+        b"L\x00\x00\x00\x01\x14\x02\x00": "lnk",  # Windows Shell Link (.lnk)
+        b"regf": "reg",                     # Windows Registry hive
+
+        # ── Databases ─────────────────────────────────────────────────────────
+        b"SQLite format 3\x00": "sqlite",
+
+        # ── Network captures ──────────────────────────────────────────────────
+        b"\xD4\xC3\xB2\xA1": "pcap",       # PCAP little-endian
+        b"\xA1\xB2\xC3\xD4": "pcap",       # PCAP big-endian
+        b"\xA1\xB2\x3C\x4D": "pcap",       # PCAP ns-resolution
+        b"\x0A\x0D\x0D\x0A": "pcapng",     # PCAPNG
+
+        # ── Email ─────────────────────────────────────────────────────────────
         b"From ": "eml",
+        b"Return-Path:": "eml",
+        b"Received:": "eml",
+        b"MIME-Version:": "eml",
+
+        # ── Scripts / code ────────────────────────────────────────────────────
+        b"#!/": "script",
+        b"<?php": "php",
+
+        # ── Crypto / forensic containers ─────────────────────────────────────
+        b"-----BEGIN ": "pem",             # PEM certificate / key
     }
 
+    # Signatures longer than this won't be split across chunk boundaries.
     MAX_SIGNATURE_LENGTH = 2048
+
+    # Minimum file size to carve (bytes) — skip zero-byte false positives.
+    MIN_CARVE_SIZE = 16
 
     @staticmethod
     def find_signatures(
         data: bytes, offset: int = 0
     ) -> Generator[tuple[int, str], None, None]:
-        """Find all signatures in data chunk."""
+        """Find all signatures in data chunk, yielding (absolute_offset, type)."""
         for sig, file_type in SignatureDatabase.SIGNATURES.items():
             start = 0
             while True:
@@ -179,6 +247,17 @@ class StreamingCarver:
                 validation_passed=validation_passed,
                 validation_notes=validation_notes,
             )
+
+            # Entropy + forensic classification
+            try:
+                cls_result = classify_file(output_file, file_type)
+                carved_file.entropy = cls_result.entropy
+                carved_file.forensic_category = cls_result.category.value
+                carved_file.forensic_priority = cls_result.forensic_priority
+                carved_file.possibly_encrypted = cls_result.possibly_encrypted
+            except Exception:
+                pass
+
             carved_files.append(carved_file)
 
             if file_type in {"zip", "docx", "xlsx", "pptx"} and actual_size > 0:
@@ -235,9 +314,9 @@ class StreamingCarver:
         with open(source_path, "rb") as handle:
             handle.seek(offset)
 
-            if file_type in {"mp4", "mov"}:
+            if file_type in {"mp4", "mov", "heic", "m4v"}:
                 return self._get_mp4_size(handle, offset, source_path)
-            if file_type in {"zip", "docx", "xlsx", "pptx"}:
+            if file_type in {"zip", "docx", "xlsx", "pptx", "7z"}:
                 return self._find_zip_end(handle, offset, source_path)
             if file_type == "pdf":
                 return self._find_pdf_end(handle, offset, source_path)
@@ -245,14 +324,56 @@ class StreamingCarver:
                 return self._find_jpeg_end(handle)
             if file_type == "png":
                 return self._find_png_end(handle)
+            if file_type == "gif":
+                return self._find_gif_end(handle)
             return self._estimate_file_size(file_type)
 
     def _disambiguate_type(
         self, source_path: Path, offset: int, types: list[str]
     ) -> str:
-        """Resolve ambiguous signatures."""
+        """Resolve ambiguous signatures to a specific canonical type."""
         unique_types = set(types)
 
+        # ── ftyp ISO Base Media (MP4, MOV, HEIC, HEIF, M4V, …) ──────────────
+        if "ftyp" in unique_types:
+            try:
+                with open(source_path, "rb") as handle:
+                    handle.seek(offset + 8)
+                    brand = handle.read(4)
+                    handle.seek(offset + 8)
+                    brands_data = handle.read(64)
+                    heic_brands = {b"heic", b"heix", b"hevc", b"hevx",
+                                   b"mif1", b"msf1", b"avif", b"avis"}
+                    if brand in heic_brands or any(b in brands_data for b in heic_brands):
+                        return "heic"
+                    qt_brands = {b"qt  ", b"mqt "}
+                    if brand in qt_brands:
+                        return "mov"
+                    mp4_brands = {b"mp41", b"mp42", b"isom", b"M4V ",
+                                  b"M4A ", b"f4v ", b"dash"}
+                    if brand in mp4_brands or any(b in brands_data for b in mp4_brands):
+                        return "mp4"
+                    return "mp4"  # generic ftyp fallback
+            except OSError:
+                return "mp4"
+
+        # ── RIFF container: WAV / AVI / WebP ─────────────────────────────────
+        if "riff" in unique_types:
+            try:
+                with open(source_path, "rb") as handle:
+                    handle.seek(offset + 8)
+                    riff_type = handle.read(4)
+                    if riff_type == b"WAVE":
+                        return "wav"
+                    if riff_type == b"AVI ":
+                        return "avi"
+                    if riff_type == b"WEBP":
+                        return "webp"
+            except OSError:
+                pass
+            return "riff"
+
+        # ── ZIP / DOCX / XLSX / PPTX ─────────────────────────────────────────
         if "zip" in unique_types:
             try:
                 with open(source_path, "rb") as handle:
@@ -260,7 +381,6 @@ class StreamingCarver:
                     filename = handle.read(256).split(b"\x00")[0].decode(
                         "utf-8", errors="ignore"
                     )
-
                     if "word/" in filename:
                         return "docx"
                     if "xl/" in filename:
@@ -271,20 +391,26 @@ class StreamingCarver:
                 pass
             return "zip"
 
-        if "riff" in unique_types:
+        # ── OLE compound document: DOC / XLS / PPT / MSG ─────────────────────
+        if "ole" in unique_types:
             try:
                 with open(source_path, "rb") as handle:
-                    handle.seek(offset + 8)
-                    riff_type = handle.read(4)
-
-                    if riff_type == b"WAVE":
-                        return "wav"
-                    if riff_type == b"AVI ":
-                        return "avi"
+                    handle.seek(offset)
+                    sample = handle.read(4096)
+                # Look for well-known OLE stream name markers
+                if b"M\x00e\x00s\x00s\x00a\x00g\x00e" in sample:
+                    return "msg"
+                if b"W\x00o\x00r\x00d\x00D\x00o\x00c" in sample:
+                    return "doc"
+                if b"W\x00o\x00r\x00k\x00b\x00o\x00o\x00k" in sample:
+                    return "xls"
+                if b"P\x00o\x00w\x00e\x00r\x00P\x00o\x00i\x00n\x00t" in sample:
+                    return "ppt"
             except OSError:
                 pass
-            return "riff"
+            return "ole"
 
+        # ── EML: validate it has RFC-822 headers ─────────────────────────────
         if "eml" in unique_types:
             try:
                 with open(source_path, "rb") as handle:
@@ -296,6 +422,47 @@ class StreamingCarver:
             except OSError:
                 pass
             return "eml"
+
+        # ── Script: check shebang line ────────────────────────────────────────
+        if "script" in unique_types:
+            try:
+                with open(source_path, "rb") as handle:
+                    handle.seek(offset)
+                    line = handle.read(64)
+                    if b"python" in line:
+                        return "py"
+                    if b"bash" in line or b"sh\n" in line:
+                        return "sh"
+                    if b"perl" in line:
+                        return "pl"
+                    if b"ruby" in line:
+                        return "rb"
+                    if b"node" in line or b"javascript" in line:
+                        return "js"
+                    return "script"
+            except OSError:
+                return "script"
+
+        # ── PE: validate MZ header ────────────────────────────────────────────
+        if "pe" in unique_types:
+            try:
+                with open(source_path, "rb") as handle:
+                    handle.seek(offset)
+                    header = handle.read(64)
+                    if header[:2] == b"MZ":
+                        # Check for valid PE offset
+                        if len(header) >= 60:
+                            pe_offset = struct.unpack_from("<I", header, 60)[0]
+                            if 64 <= pe_offset <= 1024:
+                                return "pe"
+                        return "pe"
+            except OSError:
+                pass
+            return "pe"
+
+        # ── MP3: multiple signatures may overlap ─────────────────────────────
+        if "mp3" in unique_types:
+            return "mp3"
 
         return types[0] if types else "unknown"
 
@@ -470,10 +637,14 @@ class StreamingCarver:
         return min(max_size, pos - start_pos)
 
     def _validate_output_file(self, file_type: str, output_file: Path, size: int) -> str:
-        """Validate a carved artifact without loading large payloads wholesale."""
-        if size <= 16 * 1024 * 1024:
-            return self._validate_file(file_type, output_file.read_bytes())
+        """Validate a carved artifact using efficient prefix/suffix reads.
 
+        For all types we read only what is structurally necessary (header and
+        trailer) rather than loading the entire file.  Types that require a
+        content scan (PDF) stream the file in chunks.  The old _validate_file
+        helper that loaded the entire buffer is kept for callers that already
+        have the bytes in memory.
+        """
         match file_type:
             case "jpeg":
                 head = self._read_prefix(output_file, 4)
@@ -606,110 +777,105 @@ class StreamingCarver:
         return False
 
     def _validate_file(self, file_type: str, data: bytes) -> str:
-        """Apply secondary validation rules."""
-        match file_type:
-            case "jpeg":
-                if len(data) < 4:
-                    raise ValidationError("JPEG too small")
-                if data[0:2] != b"\xff\xd8":
-                    raise ValidationError("JPEG: Invalid SOI marker")
-                if data[-2:] != b"\xff\xd9":
-                    raise ValidationError("JPEG: Missing EOI marker")
-                return "JPEG validated: SOI and EOI present"
+        """Validate carved bytes; delegates to _validate_output_file via a temp path.
 
-            case "png":
-                if len(data) < 24:
-                    raise ValidationError("PNG too small")
-                if data[8:12] != b"IHDR":
-                    raise ValidationError("PNG: Invalid IHDR chunk")
-                return "PNG validated: IHDR present"
+        This entry-point exists for callers that already have the raw bytes in
+        memory (e.g. small-file carving path, tests).  It writes the bytes to a
+        temporary file so that the single _validate_output_file implementation
+        is authoritative for all validation logic.
+        """
+        import tempfile
 
-            case "bmp":
-                if len(data) < 54:
-                    raise ValidationError("BMP too small")
-                if data[0:2] != b"BM":
-                    raise ValidationError("BMP: Invalid signature")
-                file_size_field = int(struct.unpack_from("<I", data, 2)[0])
-                if not (int(len(data) * 0.8) <= file_size_field <= int(len(data) * 1.2)):
-                    raise ValidationError(
-                        f"BMP: file_size field {file_size_field} "
-                        f"inconsistent with carved size {len(data)}"
-                    )
-                pixel_offset = int(struct.unpack_from("<I", data, 10)[0])
-                if pixel_offset < 26:
-                    raise ValidationError(f"BMP: Invalid pixel data offset {pixel_offset}")
-                return "BMP validated: signature and size field consistent"
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = Path(tmp.name)
 
-            case "pdf":
-                if len(data) < 10:
-                    raise ValidationError("PDF too small")
-                if not (b"xref" in data or b"stream" in data):
-                    raise ValidationError("PDF: No xref or stream found")
-                return "PDF validated: xref/stream present"
+        try:
+            return self._validate_output_file(file_type, tmp_path, len(data))
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
-            case "gif":
-                if len(data) < 13:
-                    raise ValidationError("GIF too small")
-                if data[0:6] not in (b"GIF87a", b"GIF89a"):
-                    raise ValidationError("GIF: Invalid header")
-                if data[-1:] != b"\x3b":
-                    raise ValidationError("GIF: Missing trailer byte")
-                return "GIF validated: header and trailer present"
+    def _find_gif_end(self, handle: BinaryIO) -> int:
+        """Find GIF trailer byte (0x3B)."""
+        start_pos = handle.tell()
+        max_size = 50 * 1024 * 1024  # 50 MB max GIF
 
-            case "tiff":
-                if len(data) < 8:
-                    raise ValidationError("TIFF too small")
-                byte_order = data[0:2]
-                if byte_order == b"II":
-                    magic = struct.unpack_from("<H", data, 2)[0]
-                elif byte_order == b"MM":
-                    magic = struct.unpack_from(">H", data, 2)[0]
-                else:
-                    raise ValidationError("TIFF: Invalid byte order marker")
-                if magic != 42:
-                    raise ValidationError(f"TIFF: Invalid magic number {magic}")
-                return f"TIFF validated: {('little' if byte_order == b'II' else 'big')}-endian"
+        chunk_size = 512 * 1024
+        pos = start_pos
+        prev_byte = b""
 
-            case "mp3":
-                if len(data) < 4:
-                    raise ValidationError("MP3 too small")
-                sync = data[0:2]
-                if sync not in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
-                    raise ValidationError("MP3: Invalid frame sync")
-                return "MP3 validated: frame sync present"
+        while pos - start_pos < max_size:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            combined = prev_byte + chunk
+            idx = combined.rfind(b"\x3b")
+            if idx != -1:
+                return pos - start_pos - len(prev_byte) + idx + 1
+            pos += len(chunk)
+            prev_byte = combined[-1:]
 
-            case "sqlite":
-                if len(data) < 20:
-                    raise ValidationError("SQLite too small")
-                try:
-                    page_size = int(struct.unpack(">H", data[16:18])[0])
-                    if page_size == 1:
-                        page_size = 65536
-                    if (
-                        page_size < 512
-                        or page_size > 65536
-                        or (page_size & (page_size - 1)) != 0
-                    ):
-                        raise ValidationError(f"SQLite: Invalid page size {page_size}")
-                    return f"SQLite validated: page size {page_size}"
-                except struct.error as exc:
-                    raise ValidationError("SQLite: Cannot read page size") from exc
-
-            case _:
-                return "No secondary validation for this type"
+        return min(max_size, pos - start_pos)
 
     def _estimate_file_size(self, file_type: str) -> int:
         """Estimate carving size limit by type."""
-        sizes = {
+        sizes: dict[str, int] = {
+            # images
             "jpeg": 50 * 1024 * 1024,
             "png": 100 * 1024 * 1024,
+            "gif": 50 * 1024 * 1024,
+            "bmp": 100 * 1024 * 1024,
+            "tiff": 500 * 1024 * 1024,
+            "psd": 500 * 1024 * 1024,
+            "webp": 50 * 1024 * 1024,
+            "heic": 50 * 1024 * 1024,
+            # documents
+            "pdf": 500 * 1024 * 1024,
+            "rtf": 50 * 1024 * 1024,
+            "xml": 50 * 1024 * 1024,
+            "html": 10 * 1024 * 1024,
+            # office
             "zip": 500 * 1024 * 1024,
             "docx": 500 * 1024 * 1024,
             "xlsx": 500 * 1024 * 1024,
             "pptx": 500 * 1024 * 1024,
-            "pdf": 500 * 1024 * 1024,
+            "doc": 50 * 1024 * 1024,
+            "xls": 50 * 1024 * 1024,
+            "ppt": 50 * 1024 * 1024,
+            "ole": 50 * 1024 * 1024,
+            "msg": 50 * 1024 * 1024,
+            # archives
+            "7z": 2 * 1024 * 1024 * 1024,
+            "rar": 2 * 1024 * 1024 * 1024,
+            "gz": 500 * 1024 * 1024,
+            "bz2": 500 * 1024 * 1024,
+            "xz": 500 * 1024 * 1024,
+            # audio
             "mp3": 500 * 1024 * 1024,
+            "wav": 2 * 1024 * 1024 * 1024,
+            "flac": 500 * 1024 * 1024,
+            "ogg": 500 * 1024 * 1024,
+            # video
             "avi": 2 * 1024 * 1024 * 1024,
+            "wmv": 2 * 1024 * 1024 * 1024,
+            # executables
+            "pe": 100 * 1024 * 1024,
+            "elf": 100 * 1024 * 1024,
+            # forensic
+            "evtx": 500 * 1024 * 1024,
+            "lnk": 4 * 1024,
+            "reg": 100 * 1024 * 1024,
+            "sqlite": 500 * 1024 * 1024,
+            # network
+            "pcap": 2 * 1024 * 1024 * 1024,
+            "pcapng": 2 * 1024 * 1024 * 1024,
+            # scripts / misc
+            "script": 1 * 1024 * 1024,
+            "py": 1 * 1024 * 1024,
+            "sh": 1 * 1024 * 1024,
+            "php": 1 * 1024 * 1024,
+            "pem": 32 * 1024,
+            "eml": 50 * 1024 * 1024,
         }
         return sizes.get(file_type, 10 * 1024 * 1024)
 

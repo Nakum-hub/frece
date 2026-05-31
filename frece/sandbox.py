@@ -41,7 +41,26 @@ class InputValidator:
                 remediation="Use only alphanumeric, dash, underscore, and period.",
             )
 
-        return Path(path_str)
+        # Block null bytes
+        if "\x00" in path_str:
+            raise SandboxError(
+                "Path contains null bytes",
+                remediation="Remove null bytes from the path.",
+            )
+
+        # Block path traversal sequences
+        path = Path(path_str)
+        try:
+            parts = path.parts
+        except Exception:
+            parts = []
+        if ".." in parts:
+            raise SandboxError(
+                "Path traversal ('..') is not allowed",
+                remediation="Use an absolute path without '..' components.",
+            )
+
+        return path
 
     @staticmethod
     def validate_case_name(name: str) -> str:

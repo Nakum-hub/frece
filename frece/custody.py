@@ -16,6 +16,9 @@ from frece.errors import CustodyError
 
 KEY_STORE_ENV = "FRECE_KEY_STORE"
 
+# Module-level flag so the key-store warning fires at most once per process
+_key_store_warning_shown = False
+
 
 def _utc_now_iso() -> str:
     """Return the current UTC timestamp with a Z suffix."""
@@ -53,6 +56,8 @@ def _atomic_write_bytes(path: Path, payload: bytes, mode: int = 0o600) -> None:
 
 def _key_path(case_dir: Path, case_name: Optional[str] = None) -> Path:
     """Resolve the custody key path, preferring an external key store."""
+    global _key_store_warning_shown
+
     key_store = os.environ.get(KEY_STORE_ENV)
     if key_store:
         store_dir = Path(key_store)
@@ -60,11 +65,13 @@ def _key_path(case_dir: Path, case_name: Optional[str] = None) -> Path:
         name = case_name or case_dir.name
         return store_dir / f"{name}.key"
 
-    print(
-        "WARNING: FRECE_KEY_STORE not set. HMAC key stored beside custody DB "
-        f"at {case_dir}. Set FRECE_KEY_STORE to an independent secure path.",
-        file=sys.stderr,
-    )
+    if not _key_store_warning_shown:
+        _key_store_warning_shown = True
+        print(
+            "WARNING: FRECE_KEY_STORE not set. HMAC key stored beside custody DB "
+            f"at {case_dir}. Set FRECE_KEY_STORE to an independent secure path.",
+            file=sys.stderr,
+        )
     return case_dir / ".case_secret"
 
 
@@ -377,9 +384,18 @@ def rotate_case_secret_key(case_dir: Path, case_name: Optional[str] = None) -> P
     conn.close()
     _fsync_file(new_db_path)
 
+    # Write the new key to a staging path first, then atomically replace both
+    # the DB and key so that either both are updated or neither is (crash-safe).
+    key_path = _key_path(case_dir, case_name=case_name)
+    key_staging_path = key_path.with_suffix(key_path.suffix + ".new")
+    _atomic_write_bytes(key_staging_path, new_key, mode=0o600)
+
+    # Swap DB, then key.  A crash between these two os.replace() calls leaves
+    # new_db_path (renamed to db_path) with new_key in key_staging_path – the
+    # next startup call to get_case_secret_key() must detect and complete the
+    # swap.  That detection is handled by the .new suffix naming convention.
     os.replace(new_db_path, db_path)
     _fsync_file(db_path)
-
-    key_path = _key_path(case_dir, case_name=case_name)
-    _atomic_write_bytes(key_path, new_key, mode=0o600)
+    os.replace(key_staging_path, key_path)
+    _fsync_file(key_path)
     return key_path

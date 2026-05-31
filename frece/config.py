@@ -1,8 +1,12 @@
 """Configuration and constants."""
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+
+def _default_case_root() -> Path:
+    return Path.home() / ".frece" / "cases"
 
 
 @dataclass
@@ -11,7 +15,7 @@ class Config:
 
     max_ram_per_operation: int = 64 * 1024 * 1024  # 64 MB
     default_hash: str = "sha256"
-    case_root: Path = Path.home() / ".frece" / "cases"
+    case_root: Path = field(default_factory=_default_case_root)
     writeblock_required: bool = True
     chunk_size: int = 64 * 1024 * 1024  # 64 MB default chunk
     max_signature_length: int = 2048  # Max bytes to overlap between chunks
@@ -20,6 +24,10 @@ class Config:
     max_fls_timeout: int = 0  # 0 = unlimited
     max_path_length: int = 4096
     max_case_name_length: int = 255
+
+    def ensure_case_root(self) -> None:
+        """Create the case root directory on demand (not on every load)."""
+        self.case_root.mkdir(parents=True, exist_ok=True)
 
 
 def load_config(config_path: Path = Path.home() / ".frece" / "config.toml") -> Config:
@@ -30,6 +38,8 @@ def load_config(config_path: Path = Path.home() / ".frece" / "config.toml") -> C
 
     Returns:
         Config object with values from file or defaults.
+        Note: does NOT create directories as a side-effect; call
+        config.ensure_case_root() only when a case directory is actually needed.
     """
     config = Config()
 
@@ -43,7 +53,8 @@ def load_config(config_path: Path = Path.home() / ".frece" / "config.toml") -> C
             if "default_hash" in frece_config:
                 config.default_hash = frece_config["default_hash"]
             if "case_root" in frece_config:
-                config.case_root = Path(frece_config["case_root"])
+                # expanduser() so that "~/.frece/cases" in config.toml works correctly
+                config.case_root = Path(frece_config["case_root"]).expanduser()
             if "writeblock_required" in frece_config:
                 config.writeblock_required = frece_config["writeblock_required"]
             if "chunk_size" in frece_config:
@@ -57,8 +68,10 @@ def load_config(config_path: Path = Path.home() / ".frece" / "config.toml") -> C
             if "max_fls_timeout" in frece_config:
                 config.max_fls_timeout = frece_config["max_fls_timeout"]
 
-    config.case_root.mkdir(parents=True, exist_ok=True)
     return config
+
+
+DEFAULT_CONFIG = Config()
 
 
 DEFAULT_CONFIG = Config()

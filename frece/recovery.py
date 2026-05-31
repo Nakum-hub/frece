@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator, Optional
 
+from frece.classifier import classify_file
 from frece.config import Config
 from frece.errors import RecoveryError
 
@@ -28,13 +29,18 @@ def _utc_now_iso() -> str:
 
 @dataclass
 class ScannedEntry:
-    """One deleted file as seen by fls - no extraction performed."""
+    """One deleted file as seen by fls — no extraction performed."""
 
     inode: int
     inode_token: str
     entry_type: str
     name: str
     allocated: bool
+    size: int = 0
+    mtime: int = 0    # last-modified  (Unix epoch)
+    atime: int = 0    # last-accessed  (Unix epoch)
+    ctime: int = 0    # inode-changed  (Unix epoch)
+    crtime: int = 0   # created        (Unix epoch; NTFS/ext4 only)
 
 
 @dataclass
@@ -48,6 +54,15 @@ class RecoveredFile:
     output_path: str = ""
     verified: bool = False
     original_name: Optional[str] = None
+    mtime: int = 0
+    atime: int = 0
+    ctime: int = 0
+    crtime: int = 0
+    forensic_category: str = "unknown"
+    forensic_priority: str = "LOW"
+    entropy: float = 0.0
+    possibly_encrypted: bool = False
+    timestamp: str = ""
 
 
 class DdrescueMapParser:
@@ -223,6 +238,48 @@ class DeletedFileRecovery:
         )
         return entries
 
+    def scan_mactime(
+        self,
+        image_path: Path,
+        image_offset: int = 0,
+        deleted_only: bool = True,
+    ) -> list[ScannedEntry]:
+        """Scan using fls -m to get full MAC-time metadata for all entries.
+
+        Returns ScannedEntry records with mtime/atime/ctime/crtime populated.
+        On filesystems that erase directory entries on delete (ext2/3) the
+        original filenames will show as OrphanFile-N; on NTFS they are preserved.
+
+        Args:
+            image_path:    Path to forensic image.
+            image_offset:  Sector offset into image (0 = whole disk image).
+            deleted_only:  When True (default) return only deleted entries.
+
+        Returns:
+            List of ScannedEntry with timestamp fields populated.
+        """
+        image_path = Path(image_path)
+        entries: list[ScannedEntry] = []
+        seen_inodes: set[int] = set()
+
+        for line in self._iter_fls_mactime(image_path, image_offset):
+            entry = self._parse_mactime_line(line, deleted_only=deleted_only)
+            if entry is not None and entry.inode not in seen_inodes:
+                seen_inodes.add(entry.inode)
+                entries.append(entry)
+
+        self.logger.info(
+            json.dumps(
+                {
+                    "event": "MACTIME_SCAN_COMPLETE",
+                    "image": str(image_path),
+                    "entries": len(entries),
+                    "timestamp": _utc_now_iso(),
+                }
+            )
+        )
+        return entries
+
     def _list_deleted_entries(self, image_path: Path, image_offset: int = 0) -> list[ScannedEntry]:
         """List deleted entries from a filesystem image using streamed fls output."""
         entries: list[ScannedEntry] = []
@@ -328,6 +385,103 @@ class DeletedFileRecovery:
             allocated=not is_unallocated,
         )
 
+    def _iter_fls_mactime(
+        self, image_path: Path, image_offset: int
+    ) -> Generator[str, None, None]:
+        """Stream fls -m body-file output (MD5|name|inode|…|atime|mtime|ctime|crtime)."""
+        command = ["fls", "-r", "-m", "/"]
+        if image_offset:
+            command.extend(["-o", str(image_offset)])
+        command.append(str(image_path))
+
+        try:
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                errors="replace",
+            )
+        except FileNotFoundError as exc:
+            raise RecoveryError(
+                "Tool not found: fls",
+                remediation="Install The Sleuth Kit: apt-get install sleuthkit",
+            ) from exc
+
+        assert proc.stdout is not None
+        try:
+            for line in proc.stdout:
+                yield line
+        finally:
+            proc.stdout.close()
+            proc.wait()
+
+    def _parse_mactime_line(
+        self, line: str, deleted_only: bool = True
+    ) -> Optional[ScannedEntry]:
+        """Parse one fls -m body-file line.
+
+        Format: MD5|name|inode|mode_str|UID|GID|size|atime|mtime|ctime|crtime
+        """
+        line = line.strip()
+        if not line:
+            return None
+        parts = line.split("|")
+        if len(parts) < 11:
+            return None
+
+        name = parts[1]
+
+        # Detect deleted status from the name suffix
+        is_deleted = "(deleted)" in name or "* " in name
+        if deleted_only and not is_deleted:
+            return None
+
+        name = name.replace(" (deleted)", "").strip()
+        # Strip leading path separator
+        if name.startswith("/"):
+            name = name[1:]
+
+        # Parse inode (may be "N-M-K" for NTFS attribute addresses)
+        inode_str = parts[2].split("-")[0]
+        try:
+            inode = int(inode_str)
+        except ValueError:
+            return None
+
+        try:
+            size = int(parts[6])
+        except (ValueError, IndexError):
+            size = 0
+
+        def _safe_int(s: str) -> int:
+            try:
+                return int(s)
+            except (ValueError, IndexError):
+                return 0
+
+        atime = _safe_int(parts[7])
+        mtime = _safe_int(parts[8])
+        ctime = _safe_int(parts[9])
+        crtime = _safe_int(parts[10]) if len(parts) > 10 else 0
+
+        # Determine type from mode string  (parts[3]: e.g. "r/rrw-r--r--")
+        mode_str = parts[3] if len(parts) > 3 else ""
+        entry_type = mode_str[0] if mode_str else "?"
+
+        return ScannedEntry(
+            inode=inode,
+            inode_token=parts[2],
+            entry_type=entry_type,
+            name=name or f"inode-{inode}",
+            allocated=False,  # we're reading deleted entries
+            size=size,
+            mtime=mtime,
+            atime=atime,
+            ctime=ctime,
+            crtime=crtime,
+        )
+
     def _extract_inode(
         self,
         image_path: Path,
@@ -409,6 +563,23 @@ class DeletedFileRecovery:
 
         verified = self.verify_recovered(final_path, sha256) if verify else False
 
+        # Forensic classification and entropy analysis
+        forensic_category = "unknown"
+        forensic_priority = "LOW"
+        entropy = 0.0
+        possibly_encrypted = False
+        try:
+            cls_result = classify_file(final_path, file_type)
+            forensic_category = cls_result.category.value
+            forensic_priority = cls_result.forensic_priority
+            entropy = cls_result.entropy
+            possibly_encrypted = cls_result.possibly_encrypted
+        except Exception:
+            pass
+
+        # MAC times from istat
+        mtime, atime, ctime, crtime = self._get_mac_times(image_path, inode, image_offset)
+
         return RecoveredFile(
             inode=inode,
             size=size,
@@ -417,6 +588,15 @@ class DeletedFileRecovery:
             output_path=str(final_path),
             verified=verified,
             original_name=original_name,
+            mtime=mtime,
+            atime=atime,
+            ctime=ctime,
+            crtime=crtime,
+            forensic_category=forensic_category,
+            forensic_priority=forensic_priority,
+            entropy=round(entropy, 4),
+            possibly_encrypted=possibly_encrypted,
+            timestamp=_utc_now_iso(),
         )
 
     def _stream_command_to_file(
@@ -714,6 +894,71 @@ class DeletedFileRecovery:
             ) from exc
 
         return manifest_path
+
+    def _get_mac_times(
+        self,
+        image_path: Path,
+        inode: int,
+        image_offset: int = 0,
+    ) -> tuple[int, int, int, int]:
+        """Return (mtime, atime, ctime, crtime) Unix epochs from istat.
+
+        Returns (0, 0, 0, 0) if istat fails or timestamps cannot be parsed.
+        """
+        command = ["istat"]
+        if image_offset:
+            command.extend(["-o", str(image_offset)])
+        command.extend([str(image_path), str(inode)])
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            return self._parse_istat_mac_times(result.stdout)
+        except Exception:
+            return (0, 0, 0, 0)
+
+    def _parse_istat_mac_times(self, output: str) -> tuple[int, int, int, int]:
+        """Parse mtime/atime/ctime/crtime from istat text output."""
+        mtime = atime = ctime = crtime = 0
+        for line in output.splitlines():
+            line = line.strip()
+            m = re.match(r"(?:Modified|Written):\s+(.+)", line, re.IGNORECASE)
+            if m:
+                mtime = self._parse_istat_timestamp(m.group(1))
+            m = re.match(r"Accessed:\s+(.+)", line, re.IGNORECASE)
+            if m:
+                atime = self._parse_istat_timestamp(m.group(1))
+            m = re.match(r"(?:Changed|MFT Modified):\s+(.+)", line, re.IGNORECASE)
+            if m:
+                ctime = self._parse_istat_timestamp(m.group(1))
+            m = re.match(r"(?:Created|File Created):\s+(.+)", line, re.IGNORECASE)
+            if m:
+                crtime = self._parse_istat_timestamp(m.group(1))
+        return (mtime, atime, ctime, crtime)
+
+    def _parse_istat_timestamp(self, ts_str: str) -> int:
+        """Convert an istat timestamp string to a Unix epoch integer."""
+        ts_str = ts_str.strip()
+        # istat format: "2024-03-15 14:23:11 (UTC)"
+        ts_str = re.sub(r"\s*\(.*?\)\s*$", "", ts_str)
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%b %d %Y %H:%M:%S",
+        ):
+            try:
+                from datetime import timezone as _tz
+
+                dt = datetime.strptime(ts_str.strip(), fmt).replace(tzinfo=_tz.utc)
+                return int(dt.timestamp())
+            except ValueError:
+                continue
+        return 0
 
     def _output_path_for_inode(
         self,

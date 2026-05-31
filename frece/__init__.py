@@ -1,6 +1,6 @@
 """FRECE: Forensic Recovery and Evidence Collection Engine."""
 
-__version__ = "2.0.0"
+__version__ = "2.2.0"
 
 from frece.errors import (
     AcquisitionError,
