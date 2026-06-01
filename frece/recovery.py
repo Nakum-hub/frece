@@ -923,37 +923,67 @@ class DeletedFileRecovery:
             return (0, 0, 0, 0)
 
     def _parse_istat_mac_times(self, output: str) -> tuple[int, int, int, int]:
-        """Parse mtime/atime/ctime/crtime from istat text output."""
-        mtime = atime = ctime = crtime = 0
+        """Parse mtime/atime/ctime/crtime from istat text output.
+
+        Handles both NTFS (File Modified / MFT Modified) and
+        ext4 (File Modified / Inode Modified / File Created) label variants,
+        tab-separated values, and sub-second (nano/microsecond) precision.
+        """
+        # Label → which timestamp variable to update
+        label_map = {
+            r"file\s+modified":   "mtime",
+            r"written":           "mtime",
+            r"modified":          "mtime",
+            r"accessed":          "atime",
+            r"mft\s+modified":    "ctime",
+            r"inode\s+modified":  "ctime",
+            r"changed":           "ctime",
+            r"file\s+created":    "crtime",
+            r"created":           "crtime",
+        }
+
+        results: dict[str, int] = {}
         for line in output.splitlines():
             line = line.strip()
-            m = re.match(r"(?:Modified|Written):\s+(.+)", line, re.IGNORECASE)
-            if m:
-                mtime = self._parse_istat_timestamp(m.group(1))
-            m = re.match(r"Accessed:\s+(.+)", line, re.IGNORECASE)
-            if m:
-                atime = self._parse_istat_timestamp(m.group(1))
-            m = re.match(r"(?:Changed|MFT Modified):\s+(.+)", line, re.IGNORECASE)
-            if m:
-                ctime = self._parse_istat_timestamp(m.group(1))
-            m = re.match(r"(?:Created|File Created):\s+(.+)", line, re.IGNORECASE)
-            if m:
-                crtime = self._parse_istat_timestamp(m.group(1))
-        return (mtime, atime, ctime, crtime)
+            for label_re, field in label_map.items():
+                m = re.match(rf"(?:{label_re}):\s+(.+)", line, re.IGNORECASE)
+                if m and field not in results:
+                    ts = self._parse_istat_timestamp(m.group(1))
+                    if ts:
+                        results[field] = ts
+                    break
+
+        return (
+            results.get("mtime", 0),
+            results.get("atime", 0),
+            results.get("ctime", 0),
+            results.get("crtime", 0),
+        )
 
     def _parse_istat_timestamp(self, ts_str: str) -> int:
-        """Convert an istat timestamp string to a Unix epoch integer."""
+        """Convert an istat timestamp string to a Unix epoch integer.
+
+        Handles formats like:
+          2026-05-31 03:03:04.499545400 (UTC)    ← NTFS nanoseconds
+          2026-05-31 03:02:03.563617652 (UTC)    ← ext4 nanoseconds
+          2024-03-15 14:23:11 (UTC)              ← no sub-seconds
+        """
+        from datetime import timezone as _tz
+
         ts_str = ts_str.strip()
-        # istat format: "2024-03-15 14:23:11 (UTC)"
-        ts_str = re.sub(r"\s*\(.*?\)\s*$", "", ts_str)
+        # Strip timezone annotation e.g. " (UTC)"
+        ts_str = re.sub(r"\s*\([^)]*\)\s*$", "", ts_str).strip()
+        # Truncate sub-seconds to microseconds (Python datetime max precision)
+        ts_str = re.sub(r"(\.\d{6})\d+", r"\1", ts_str)
+
         for fmt in (
+            "%Y-%m-%d %H:%M:%S.%f",
             "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
             "%Y-%m-%dT%H:%M:%S",
             "%b %d %Y %H:%M:%S",
         ):
             try:
-                from datetime import timezone as _tz
-
                 dt = datetime.strptime(ts_str.strip(), fmt).replace(tzinfo=_tz.utc)
                 return int(dt.timestamp())
             except ValueError:

@@ -50,10 +50,11 @@ class InputValidator:
 
         # Block path traversal sequences
         path = Path(path_str)
+        parts: tuple[str, ...] = ()
         try:
             parts = path.parts
         except Exception:
-            parts = []
+            pass
         if ".." in parts:
             raise SandboxError(
                 "Path traversal ('..') is not allowed",

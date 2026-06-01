@@ -272,8 +272,12 @@ class StreamingCarver:
 
         manifest_path = output_dir / "carve_manifest.json"
         try:
+            manifest_dict = manifest.to_dict()
+            # Keep disk manifest consistent with CLI JSON output
+            manifest_dict["manifest_path"] = str(manifest_path)
+            manifest_dict["files_carved"] = len(carved_files)
             with open(manifest_path, "w", encoding="utf-8") as handle:
-                json.dump(manifest.to_dict(), handle, indent=2)
+                json.dump(manifest_dict, handle, indent=2)
                 handle.flush()
                 os.fsync(handle.fileno())
         except OSError as exc:
@@ -637,15 +641,9 @@ class StreamingCarver:
         return min(max_size, pos - start_pos)
 
     def _validate_output_file(self, file_type: str, output_file: Path, size: int) -> str:
-        """Validate a carved artifact using efficient prefix/suffix reads.
-
-        For all types we read only what is structurally necessary (header and
-        trailer) rather than loading the entire file.  Types that require a
-        content scan (PDF) stream the file in chunks.  The old _validate_file
-        helper that loaded the entire buffer is kept for callers that already
-        have the bytes in memory.
-        """
+        """Validate a carved artifact — covers all 40+ supported types."""
         match file_type:
+            # ── Images ───────────────────────────────────────────────────────
             case "jpeg":
                 head = self._read_prefix(output_file, 4)
                 tail = self._read_suffix(output_file, 2)
@@ -661,31 +659,11 @@ class StreamingCarver:
                 head = self._read_prefix(output_file, 24)
                 if len(head) < 24:
                     raise ValidationError("PNG too small")
-                if head[8:12] != b"IHDR":
+                if head[0:8] != b"\x89PNG\r\n\x1a\n":
+                    raise ValidationError("PNG: Invalid signature")
+                if head[12:16] != b"IHDR":
                     raise ValidationError("PNG: Invalid IHDR chunk")
-                return "PNG validated: IHDR present"
-
-            case "bmp":
-                head = self._read_prefix(output_file, 54)
-                if len(head) < 54:
-                    raise ValidationError("BMP too small")
-                if head[0:2] != b"BM":
-                    raise ValidationError("BMP: Invalid signature")
-                file_size_field = int(struct.unpack_from("<I", head, 2)[0])
-                if not (int(size * 0.8) <= file_size_field <= int(size * 1.2)):
-                    raise ValidationError(
-                        "BMP: file_size field "
-                        f"{file_size_field} inconsistent with carved size {size}"
-                    )
-                pixel_offset = int(struct.unpack_from("<I", head, 10)[0])
-                if pixel_offset < 26:
-                    raise ValidationError(f"BMP: Invalid pixel data offset {pixel_offset}")
-                return "BMP validated: signature and size field consistent"
-
-            case "pdf":
-                if not self._file_contains_any(output_file, (b"xref", b"stream")):
-                    raise ValidationError("PDF: No xref or stream found")
-                return "PDF validated: xref/stream present"
+                return "PNG validated: signature and IHDR present"
 
             case "gif":
                 head = self._read_prefix(output_file, 13)
@@ -697,6 +675,22 @@ class StreamingCarver:
                 if tail != b"\x3b":
                     raise ValidationError("GIF: Missing trailer byte")
                 return "GIF validated: header and trailer present"
+
+            case "bmp":
+                head = self._read_prefix(output_file, 54)
+                if len(head) < 54:
+                    raise ValidationError("BMP too small")
+                if head[0:2] != b"BM":
+                    raise ValidationError("BMP: Invalid signature")
+                file_size_field = int(struct.unpack_from("<I", head, 2)[0])
+                if not (int(size * 0.8) <= file_size_field <= int(size * 1.2)):
+                    raise ValidationError(
+                        f"BMP: size field {file_size_field} vs carved {size}"
+                    )
+                pixel_offset = int(struct.unpack_from("<I", head, 10)[0])
+                if pixel_offset < 26:
+                    raise ValidationError(f"BMP: Invalid pixel offset {pixel_offset}")
+                return "BMP validated: signature and size field consistent"
 
             case "tiff":
                 head = self._read_prefix(output_file, 8)
@@ -710,35 +704,224 @@ class StreamingCarver:
                 else:
                     raise ValidationError("TIFF: Invalid byte order marker")
                 if magic != 42:
-                    raise ValidationError(f"TIFF: Invalid magic number {magic}")
-                return f"TIFF validated: {('little' if byte_order == b'II' else 'big')}-endian"
+                    raise ValidationError(f"TIFF: Invalid magic {magic}")
+                endian = "little" if byte_order == b"II" else "big"
+                return f"TIFF validated: {endian}-endian"
 
+            case "psd":
+                head = self._read_prefix(output_file, 6)
+                if len(head) < 6 or head[0:4] != b"8BPS":
+                    raise ValidationError("PSD: Invalid signature")
+                version = struct.unpack_from(">H", head, 4)[0]
+                if version not in (1, 2):
+                    raise ValidationError(f"PSD: Invalid version {version}")
+                return f"PSD validated: version {version}"
+
+            # ── Documents ────────────────────────────────────────────────────
+            case "pdf":
+                if not self._file_contains_any(output_file, (b"xref", b"stream")):
+                    raise ValidationError("PDF: No xref or stream found")
+                return "PDF validated: xref/stream present"
+
+            case "rtf":
+                head = self._read_prefix(output_file, 6)
+                if not head.startswith(b"{\\rtf"):
+                    raise ValidationError("RTF: Missing {\\rtf header")
+                return "RTF validated: header present"
+
+            case "xml":
+                head = self._read_prefix(output_file, 64)
+                text = head.decode("utf-8", errors="ignore").lstrip()
+                if not (text.startswith("<?xml") or text.startswith("<")):
+                    raise ValidationError("XML: No opening tag found")
+                return "XML validated: opening tag present"
+
+            case "html" | "htm":
+                head = self._read_prefix(output_file, 256)
+                text = head.lower().decode("utf-8", errors="ignore")
+                if "<!doctype" not in text and "<html" not in text:
+                    raise ValidationError("HTML: No DOCTYPE or <html> tag")
+                return "HTML validated: root element present"
+
+            # ── Office / OLE ─────────────────────────────────────────────────
+            case "ole" | "doc" | "xls" | "ppt" | "msg":
+                head = self._read_prefix(output_file, 8)
+                if head != b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1":
+                    raise ValidationError("OLE: Invalid compound document signature")
+                return "OLE validated: compound document signature"
+
+            # ── Archives ─────────────────────────────────────────────────────
+            case "zip" | "docx" | "xlsx" | "pptx" | "odt":
+                head = self._read_prefix(output_file, 4)
+                if head[:4] not in (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"):
+                    raise ValidationError("ZIP: Invalid PK signature")
+                return "ZIP validated: PK signature present"
+
+            case "7z":
+                head = self._read_prefix(output_file, 6)
+                if head != b"7z\xBC\xAF\x27\x1C":
+                    raise ValidationError("7z: Invalid signature")
+                return "7z validated"
+
+            case "rar":
+                head = self._read_prefix(output_file, 8)
+                v4 = head[:7] == b"Rar!\x1A\x07\x00"
+                v5 = head[:8] == b"Rar!\x1A\x07\x01\x00"
+                if not (v4 or v5):
+                    raise ValidationError("RAR: Invalid signature")
+                return f"RAR validated: {'5.x' if v5 else '4.x'}"
+
+            case "gz":
+                head = self._read_prefix(output_file, 3)
+                if head[:2] != b"\x1f\x8b":
+                    raise ValidationError("GZ: Invalid magic")
+                return f"GZ validated: method=0x{head[2]:02x}"
+
+            case "bz2":
+                head = self._read_prefix(output_file, 3)
+                if not head.startswith(b"BZh"):
+                    raise ValidationError("BZ2: Invalid header")
+                return "BZ2 validated: BZh header present"
+
+            case "xz":
+                head = self._read_prefix(output_file, 6)
+                if head != b"\xFD7zXZ\x00":
+                    raise ValidationError("XZ: Invalid magic")
+                return "XZ validated"
+
+            # ── Audio ─────────────────────────────────────────────────────────
             case "mp3":
                 head = self._read_prefix(output_file, 4)
-                if len(head) < 4:
+                if len(head) < 3:
                     raise ValidationError("MP3 too small")
-                sync = head[0:2]
-                if sync not in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
-                    raise ValidationError("MP3: Invalid frame sync")
-                return "MP3 validated: frame sync present"
+                if head[:3] == b"ID3":
+                    return "MP3 validated: ID3 tag present"
+                if head[0:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+                    return "MP3 validated: frame sync present"
+                raise ValidationError("MP3: No ID3 tag or frame sync")
 
+            case "flac":
+                head = self._read_prefix(output_file, 4)
+                if head != b"fLaC":
+                    raise ValidationError("FLAC: Invalid marker")
+                return "FLAC validated"
+
+            case "ogg":
+                head = self._read_prefix(output_file, 4)
+                if head != b"OggS":
+                    raise ValidationError("OGG: Invalid capture pattern")
+                return "OGG validated"
+
+            # ── Databases ─────────────────────────────────────────────────────
             case "sqlite":
                 head = self._read_prefix(output_file, 20)
                 if len(head) < 20:
                     raise ValidationError("SQLite too small")
+                if head[:16] != b"SQLite format 3\x00":
+                    raise ValidationError("SQLite: Invalid header string")
                 try:
-                    page_size = int(struct.unpack(">H", head[16:18])[0])
+                    page_size = struct.unpack(">H", head[16:18])[0]
                     if page_size == 1:
                         page_size = 65536
-                    if (
-                        page_size < 512
-                        or page_size > 65536
-                        or (page_size & (page_size - 1)) != 0
-                    ):
+                    if page_size < 512 or page_size > 65536 or (page_size & (page_size - 1)):
                         raise ValidationError(f"SQLite: Invalid page size {page_size}")
-                    return f"SQLite validated: page size {page_size}"
+                    return f"SQLite validated: page_size={page_size}"
                 except struct.error as exc:
                     raise ValidationError("SQLite: Cannot read page size") from exc
+
+            # ── Executables ───────────────────────────────────────────────────
+            case "pe":
+                head = self._read_prefix(output_file, 64)
+                if len(head) < 4 or head[0:2] != b"MZ":
+                    raise ValidationError("PE: Missing MZ signature")
+                if len(head) >= 60:
+                    pe_off = struct.unpack_from("<I", head, 60)[0]
+                    if 64 <= pe_off <= 1024:
+                        pe_head = self._read_prefix(output_file, pe_off + 4)
+                        if len(pe_head) >= pe_off + 4:
+                            if pe_head[pe_off:pe_off + 4] == b"PE\x00\x00":
+                                return f"PE validated: MZ + PE at offset {pe_off}"
+                return "PE validated: MZ signature (PE header unconfirmed)"
+
+            case "elf":
+                head = self._read_prefix(output_file, 16)
+                if len(head) < 16 or head[0:4] != b"\x7fELF":
+                    raise ValidationError("ELF: Invalid magic bytes")
+                bits = {1: "32-bit", 2: "64-bit"}.get(head[4], f"cls-{head[4]}")
+                endian = {1: "LE", 2: "BE"}.get(head[5], "?E")
+                return f"ELF validated: {bits} {endian}"
+
+            # ── Windows artifacts ─────────────────────────────────────────────
+            case "evtx":
+                head = self._read_prefix(output_file, 8)
+                if head[:8] != b"ElfFile\x00":
+                    raise ValidationError("EVTX: Invalid ElfFile signature")
+                return "EVTX validated"
+
+            case "lnk":
+                head = self._read_prefix(output_file, 4)
+                if head != b"L\x00\x00\x00":
+                    raise ValidationError("LNK: Invalid header size field")
+                return "LNK validated: Shell Link header present"
+
+            case "reg":
+                head = self._read_prefix(output_file, 4)
+                if head != b"regf":
+                    raise ValidationError("REG: Invalid hive signature")
+                return "Registry hive validated: regf signature"
+
+            # ── Network ───────────────────────────────────────────────────────
+            case "pcap":
+                head = self._read_prefix(output_file, 24)
+                if len(head) < 24:
+                    raise ValidationError("PCAP too small")
+                magic = head[0:4]
+                valid = (b"\xD4\xC3\xB2\xA1", b"\xA1\xB2\xC3\xD4", b"\xA1\xB2\x3C\x4D")
+                if magic not in valid:
+                    raise ValidationError(f"PCAP: Invalid magic {magic.hex()}")
+                endian = "<" if magic[0:1] == b"\xD4" else ">"
+                link_type = struct.unpack_from(f"{endian}I", head, 20)[0]
+                return f"PCAP validated: link_type={link_type}"
+
+            case "pcapng":
+                head = self._read_prefix(output_file, 12)
+                if len(head) < 12 or head[0:4] != b"\x0A\x0D\x0D\x0A":
+                    raise ValidationError("PCAPng: Invalid Section Header Block")
+                return "PCAPng validated: SHB magic present"
+
+            # ── Email ─────────────────────────────────────────────────────────
+            case "eml":
+                head = self._read_prefix(output_file, 512)
+                text = head.decode("utf-8", errors="ignore")
+                rfc822_starts = (
+                    "From ", "Return-Path:", "Received:", "MIME-Version:",
+                    "Date:", "Subject:", "To:", "Message-ID:",
+                )
+                if not any(text.startswith(h) for h in rfc822_starts):
+                    raise ValidationError("EML: No recognized RFC-822 header")
+                return "EML validated: RFC-822 header present"
+
+            # ── Scripts ───────────────────────────────────────────────────────
+            case "script" | "py" | "sh" | "pl" | "rb" | "js":
+                head = self._read_prefix(output_file, 8)
+                if head.startswith(b"#!"):
+                    return "Script validated: shebang present"
+                return "Script: no shebang (may still be valid)"
+
+            case "php":
+                head = self._read_prefix(output_file, 64)
+                if b"<?php" not in head and b"<?" not in head:
+                    raise ValidationError("PHP: No opening tag found")
+                return "PHP validated: opening tag present"
+
+            # ── Crypto ────────────────────────────────────────────────────────
+            case "pem":
+                head = self._read_prefix(output_file, 64)
+                text = head.decode("utf-8", errors="ignore")
+                if "-----BEGIN " not in text:
+                    raise ValidationError("PEM: Missing BEGIN marker")
+                kind = text.split("-----BEGIN ")[1].split("-----")[0]
+                return f"PEM validated: {kind}"
 
             case _:
                 return "No secondary validation for this type"

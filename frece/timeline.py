@@ -12,7 +12,6 @@ Outputs sorted chronological event streams for triage and court presentation.
 import csv
 import io
 import json
-import re
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -200,7 +199,10 @@ def _events_from_carve_manifest(manifest_path: Path) -> list[TimelineEvent]:
     return events
 
 
-def _events_from_custody_db(db_path: Path, secret_key: Optional[bytes] = None) -> list[TimelineEvent]:
+def _events_from_custody_db(  # noqa: E501
+    db_path: Path,
+    secret_key: Optional[bytes] = None,
+) -> list[TimelineEvent]:
     """Extract timeline events from a FRECE custody database."""
     if not db_path.exists():
         return []
@@ -210,7 +212,8 @@ def _events_from_custody_db(db_path: Path, secret_key: Optional[bytes] = None) -
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT event_type, evidence_id, operator, timestamp, details FROM custody_log ORDER BY id"
+            "SELECT event_type, evidence_id, operator, timestamp, details"
+            " FROM custody_log ORDER BY id"
         )
         for event_type, evidence_id, operator, timestamp, details_json in cursor.fetchall():
             epoch = _iso_to_epoch(timestamp)

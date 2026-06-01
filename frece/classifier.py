@@ -1,7 +1,6 @@
 """Forensic file classifier: entropy analysis, category detection, relevance scoring."""
 
 import math
-import struct
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
