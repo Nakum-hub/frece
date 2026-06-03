@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Generator, Optional
 
 from frece.classifier import classify_file
+from frece.metadata import extract as extract_metadata
+from frece.scoring import score_artifact
 from frece.config import Config
 from frece.errors import RecoveryError
 
@@ -63,6 +65,14 @@ class RecoveredFile:
     entropy: float = 0.0
     possibly_encrypted: bool = False
     timestamp: str = ""
+    confidence_score: int = 0
+    confidence_grade: str = "UNKNOWN"
+    artifact_metadata: dict = None  # type: ignore[assignment]
+    suggested_name: str = ""
+
+    def __post_init__(self) -> None:
+        if self.artifact_metadata is None:
+            self.artifact_metadata = {}
 
 
 class DdrescueMapParser:
@@ -123,6 +133,120 @@ class DdrescueMapParser:
                 return True
         return False
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Filename suggestion for orphan files
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TYPE_EXTENSIONS: dict[str, str] = {
+    "jpeg": "jpg", "png": "png", "gif": "gif", "bmp": "bmp",
+    "tiff": "tif", "psd": "psd", "heic": "heic", "webp": "webp",
+    "pdf": "pdf", "rtf": "rtf", "xml": "xml", "html": "html",
+    "docx": "docx", "xlsx": "xlsx", "pptx": "pptx",
+    "doc": "doc", "xls": "xls", "ppt": "ppt", "ole": "bin",
+    "zip": "zip", "7z": "7z", "rar": "rar", "gz": "gz",
+    "mp3": "mp3", "wav": "wav", "flac": "flac", "ogg": "ogg",
+    "mp4": "mp4", "avi": "avi", "mov": "mov",
+    "pe": "exe", "elf": "elf",
+    "evtx": "evtx", "lnk": "lnk", "reg": "dat",
+    "sqlite": "db", "pcap": "pcap", "pcapng": "pcapng",
+    "eml": "eml", "msg": "msg", "pem": "pem",
+    "py": "py", "sh": "sh", "php": "php", "script": "sh",
+    "txt": "txt", "csv": "csv",
+}
+
+
+def _suggest_filename(
+    original_name: Optional[str],
+    file_type: str,
+    inode: int,
+    metadata: dict,
+) -> str:
+    """Suggest a human-readable filename for orphan/recovered files.
+
+    Attempts to incorporate metadata clues (email subject, PDF title,
+    PE filename, SQLite schema) to produce a more descriptive name
+    than "OrphanFile-14.bin".
+
+    Args:
+        original_name: Filesystem name if known, else None / OrphanFile-N.
+        file_type:     Canonical type string.
+        inode:         Inode number (used as numeric suffix).
+        metadata:      Extracted metadata dict.
+
+    Returns:
+        Suggested filename string (no directory component).
+    """
+    ext = _TYPE_EXTENSIONS.get(file_type, "bin")
+
+    # If we have the real name and it isn't an orphan placeholder, use it
+    if original_name and "OrphanFile" not in original_name and original_name != "":
+        # Just ensure correct extension
+        if not original_name.endswith(f".{ext}"):
+            base = original_name.rsplit(".", 1)[0]
+            return f"{base}.{ext}"
+        return original_name
+
+    # Try metadata-derived names
+    hint = ""
+    if file_type == "eml":
+        subject = metadata.get("subject", "")
+        if subject:
+            # Sanitise for filesystem
+            safe = re.sub(r"[^A-Za-z0-9_\- ]", "", subject)[:40].strip()
+            if safe:
+                hint = f"email_{safe.replace(' ', '_')}"
+
+    elif file_type == "pdf":
+        title = metadata.get("title", "")
+        if title:
+            safe = re.sub(r"[^A-Za-z0-9_\- ]", "", title)[:40].strip()
+            if safe:
+                hint = f"doc_{safe.replace(' ', '_')}"
+
+    elif file_type in ("docx", "xlsx", "pptx"):
+        title = metadata.get("title", "")
+        creator = metadata.get("creator", "")
+        if title:
+            safe = re.sub(r"[^A-Za-z0-9_\- ]", "", title)[:40].strip()
+            if safe:
+                hint = f"office_{safe.replace(' ', '_')}"
+        elif creator:
+            safe = re.sub(r"[^A-Za-z0-9_\-]", "", creator)[:20].strip()
+            if safe:
+                hint = f"doc_by_{safe}"
+
+    elif file_type == "pe":
+        is_dll = metadata.get("is_dll", False)
+        arch = metadata.get("architecture", "")
+        suffix = "dll" if is_dll else "exe"
+        ext = suffix
+        if arch:
+            hint = f"binary_{arch}_{inode}"
+        else:
+            hint = f"binary_{inode}"
+
+    elif file_type == "sqlite":
+        tables = metadata.get("tables", [])
+        if tables:
+            first_table = tables[0].get("name", "") if isinstance(tables[0], dict) else ""
+            if first_table:
+                hint = f"db_{first_table}_{inode}"
+
+    elif file_type == "pcap":
+        ips = metadata.get("unique_src_ips", [])
+        pkts = metadata.get("packet_count", 0)
+        if ips:
+            hint = f"capture_{ips[0].replace('.','_')}_{pkts}pkts"
+
+    elif file_type in ("py", "sh", "php", "script"):
+        hint = f"script_{inode}"
+
+    if not hint:
+        hint = f"recovered_inode{inode}"
+
+    return f"{hint}.{ext}"
 
 class DeletedFileRecovery:
     """Recover deleted files from forensic images."""
@@ -580,6 +704,36 @@ class DeletedFileRecovery:
         # MAC times from istat
         mtime, atime, ctime, crtime = self._get_mac_times(image_path, inode, image_offset)
 
+        # Deep metadata extraction
+        artifact_meta: dict = {}
+        try:
+            meta = extract_metadata(final_path, file_type)
+            if "extraction_error" not in meta:
+                artifact_meta = {k: v for k, v in meta.items()
+                                 if k not in ("file_type", "file_path")}
+        except Exception:
+            pass
+
+        # Confidence scoring
+        confidence_score = 0
+        confidence_grade = "UNKNOWN"
+        try:
+            cs = score_artifact(
+                file_path=final_path,
+                file_type=file_type,
+                entropy=round(entropy, 4),
+                validation_passed=verified,
+                validation_notes="",
+                metadata=artifact_meta,
+            )
+            confidence_score = cs.score
+            confidence_grade = cs.grade
+        except Exception:
+            pass
+
+        # Suggest a filename for orphan files based on type + metadata
+        suggested = _suggest_filename(original_name, file_type, inode, artifact_meta)
+
         return RecoveredFile(
             inode=inode,
             size=size,
@@ -597,6 +751,10 @@ class DeletedFileRecovery:
             entropy=round(entropy, 4),
             possibly_encrypted=possibly_encrypted,
             timestamp=_utc_now_iso(),
+            confidence_score=confidence_score,
+            confidence_grade=confidence_grade,
+            artifact_metadata=artifact_meta,
+            suggested_name=suggested,
         )
 
     def _stream_command_to_file(

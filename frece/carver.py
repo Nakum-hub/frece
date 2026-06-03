@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import BinaryIO, Generator
 
 from frece.classifier import classify_file
+from frece.metadata import extract as extract_metadata
+from frece.scoring import score_artifact
 from frece.errors import CarveError, ValidationError
 
 
@@ -33,6 +35,13 @@ class CarvedFile:
     forensic_category: str = "unknown"
     forensic_priority: str = "LOW"
     possibly_encrypted: bool = False
+    confidence_score: int = 0
+    confidence_grade: str = "UNKNOWN"
+    artifact_metadata: dict = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.artifact_metadata is None:
+            self.artifact_metadata = {}
 
 
 @dataclass
@@ -258,6 +267,32 @@ class StreamingCarver:
             except Exception:
                 pass
 
+            # Deep metadata extraction
+            try:
+                meta = extract_metadata(output_file, file_type)
+                if "extraction_error" not in meta:
+                    carved_file.artifact_metadata = {
+                        k: v for k, v in meta.items()
+                        if k not in ("file_type", "file_path")
+                    }
+            except Exception:
+                pass
+
+            # Confidence scoring
+            try:
+                cs = score_artifact(
+                    file_path=output_file,
+                    file_type=file_type,
+                    entropy=carved_file.entropy,
+                    validation_passed=validation_passed,
+                    validation_notes=validation_notes,
+                    metadata=carved_file.artifact_metadata,
+                )
+                carved_file.confidence_score = cs.score
+                carved_file.confidence_grade = cs.grade
+            except Exception:
+                pass
+
             carved_files.append(carved_file)
 
             if file_type in {"zip", "docx", "xlsx", "pptx"} and actual_size > 0:
@@ -306,6 +341,9 @@ class StreamingCarver:
                 abs_offset = chunk_offset - len(previous_overlap)
 
                 for sig_offset, sig_type in SignatureDatabase.find_signatures(combined, abs_offset):
+                    # Pre-filter high-false-positive types before recording the hit
+                    if not self._quick_validate_sig(source_path, sig_offset, sig_type):
+                        continue
                     found_sigs.setdefault(sig_offset, []).append(sig_type)
 
                 chunk_offset += len(chunk)
@@ -314,13 +352,12 @@ class StreamingCarver:
         return sha256.hexdigest(), found_sigs
 
     def _measure_file_size(self, source_path: Path, offset: int, file_type: str) -> int:
-        """Measure how many bytes should be copied for a carved artifact."""
+        """Determine how many bytes to carve — type-specific termination prevents over-run."""
         with open(source_path, "rb") as handle:
             handle.seek(offset)
-
             if file_type in {"mp4", "mov", "heic", "m4v"}:
                 return self._get_mp4_size(handle, offset, source_path)
-            if file_type in {"zip", "docx", "xlsx", "pptx", "7z"}:
+            if file_type in {"zip", "docx", "xlsx", "pptx", "odt", "7z"}:
                 return self._find_zip_end(handle, offset, source_path)
             if file_type == "pdf":
                 return self._find_pdf_end(handle, offset, source_path)
@@ -330,7 +367,200 @@ class StreamingCarver:
                 return self._find_png_end(handle)
             if file_type == "gif":
                 return self._find_gif_end(handle)
+            if file_type == "sqlite":
+                return self._get_sqlite_size(handle)
+            if file_type in {"pcap"}:
+                return self._walk_pcap_size(handle)
+            if file_type == "pcapng":
+                return self._walk_pcapng_size(handle)
+            if file_type in {"eml", "py", "sh", "pl", "rb", "js", "php", "script",
+                             "rtf", "xml", "html", "pem"}:
+                return self._find_text_end(file_type, handle)
             return self._estimate_file_size(file_type)
+
+    def _get_sqlite_size(self, handle: BinaryIO) -> int:
+        """Compute SQLite DB size from header: page_size * page_count."""
+        try:
+            hdr = handle.read(32)
+            if len(hdr) < 32 or hdr[:16] != b"SQLite format 3\000":
+                return self._estimate_file_size("sqlite")
+            page_size = struct.unpack(">H", hdr[16:18])[0]
+            if page_size == 1:
+                page_size = 65536
+            if page_size < 512 or (page_size & (page_size - 1)):
+                return self._estimate_file_size("sqlite")
+            page_count = struct.unpack(">I", hdr[28:32])[0]
+            if page_count == 0:
+                return self._estimate_file_size("sqlite")
+            return int(min(page_size * page_count + page_size, 2 * 1024 * 1024 * 1024))
+        except (struct.error, OSError):
+            return self._estimate_file_size("sqlite")
+
+    def _walk_pcap_size(self, handle: BinaryIO) -> int:
+        """Walk PCAP packet records to find the true end of the capture."""
+        try:
+            hdr = handle.read(24)
+            if len(hdr) < 24:
+                return self._estimate_file_size("pcap")
+            le_magic = b"\xd4\xc3\xb2\xa1"
+            endian = "<" if hdr[:4] == le_magic else ">"
+            total = 24
+            consecutive_zero = 0
+            for _ in range(10_000_000):
+                rec = handle.read(16)
+                if len(rec) < 16:
+                    break
+                incl_len = struct.unpack_from(f"{endian}I", rec, 8)[0]
+                if incl_len == 0:
+                    consecutive_zero += 1
+                    if consecutive_zero >= 4:
+                        break  # null padding — end of capture
+                    total += 16
+                    continue
+                consecutive_zero = 0
+                if incl_len > 65535:
+                    break  # malformed record
+                orig_len = struct.unpack_from(f"{endian}I", rec, 12)[0]
+                if orig_len > 65535:
+                    break  # malformed record
+                total += 16 + incl_len
+                handle.seek(incl_len, 1)
+            return int(total)
+        except (struct.error, OSError):
+            return self._estimate_file_size("pcap")
+
+    def _walk_pcapng_size(self, handle: BinaryIO) -> int:
+        """Walk PCAPng blocks to find end of capture."""
+        try:
+            total = 0
+            for _ in range(5_000_000):
+                blk = handle.read(8)
+                if len(blk) < 8:
+                    break
+                block_len = struct.unpack_from("<I", blk, 4)[0]
+                if block_len < 12 or block_len > 64 * 1024 * 1024:
+                    break
+                total += block_len
+                handle.seek(block_len - 8, 1)
+            return total or self._estimate_file_size("pcapng")
+        except (struct.error, OSError):
+            return self._estimate_file_size("pcapng")
+
+    def _find_text_end(self, file_type: str, handle: BinaryIO) -> int:
+        """Find end of text-based artifact by detecting null-byte padding."""
+        limits = {
+            "eml": 50*1024*1024, "rtf": 50*1024*1024,
+            "xml": 50*1024*1024, "html": 10*1024*1024,
+            "py": 2*1024*1024, "sh": 1*1024*1024,
+            "php": 5*1024*1024, "pem": 32*1024,
+            "script": 2*1024*1024,
+        }
+        max_size = limits.get(file_type, 5*1024*1024)
+        total, chunk_size = 0, 4096
+        while total < max_size:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            null_run = chunk.find(bytes(8))  # 8 consecutive null bytes = padding
+            if null_run != -1:
+                total += null_run
+                break
+            total += len(chunk)
+        return max(total, 1)
+
+    def _quick_validate_sig(self, source_path: Path, offset: int, sig_type: str) -> bool:
+        """Fast pre-validation to reject obvious false positives before full carving.
+
+        Returns True if the hit looks plausible, False to discard it.
+        Keeps false-positive rates low on random/encrypted data.
+        """
+        # These types generate massive false-positive rates on random data
+        # because their signatures are only 2-3 bytes.
+        high_fp_types = {"mp3", "bmp", "gz", "eml", "riff", "pe", "lnk"}
+        if sig_type not in high_fp_types:
+            return True
+
+        try:
+            with open(source_path, "rb") as fh:
+                fh.seek(offset)
+                head = fh.read(32)
+
+            if sig_type == "mp3":
+                if len(head) < 4:
+                    return False
+                if head[:3] == b"ID3":
+                    return True
+                if head[0] == 0xFF and (head[1] & 0xE2) == 0xE2:
+                    # MPEG version: 00=2.5, 10=2, 11=1  (01=reserved = invalid)
+                    mpeg_ver = (head[1] >> 3) & 0x03
+                    if mpeg_ver == 0x01:
+                        return False
+                    # Layer: 01=3(MP3), 10=2, 11=1  (00=reserved = invalid)
+                    layer = (head[1] >> 1) & 0x03
+                    if layer == 0x00:
+                        return False
+                    # Bitrate index: 0000=free, 1111=bad
+                    bitrate_idx = (head[2] >> 4) & 0x0F
+                    if bitrate_idx == 0x0F:
+                        return False
+                    # Sample rate: 11 = reserved
+                    sample_idx = (head[2] >> 2) & 0x03
+                    if sample_idx == 0x03:
+                        return False
+                    # Require 8 bytes ahead to also look like audio data
+                    if len(head) >= 8 and head[4] == 0xFF and (head[5] & 0xE2) == 0xE2:
+                        return True  # Consecutive valid frame headers = real MP3
+                    return False
+                return False
+
+            if sig_type == "gz":
+                # Require valid compression method (0x08 = deflate) and flags byte
+                if len(head) >= 3 and head[0:2] == b"\x1f\x8b" and head[2] == 0x08:
+                    return True
+                return False
+
+            if sig_type == "bmp":
+                # Require BM signature + plausible pixel-data offset (≥14 bytes header)
+                if len(head) >= 14:
+                    px_offset = int.from_bytes(head[10:14], "little")
+                    if 14 <= px_offset <= 16384:
+                        return True
+                    # Zero pixel offset means test/minimal BMP — still allow
+                    return px_offset == 0
+                return len(head) >= 2  # at minimum just BM bytes
+
+            if sig_type == "pe":
+                # Require valid PE offset pointer (64-1024 range)
+                if len(head) >= 64:
+                    pe_off = int.from_bytes(head[60:64], "little")
+                    return 64 <= pe_off <= 1024
+                return False
+
+            if sig_type == "eml":
+                # Require at least one more RFC-822 header on the next line
+                if len(head) >= 16:
+                    text = head.decode("latin-1", errors="replace")
+                    import re as _re
+                    return bool(_re.search(r"[A-Za-z-]{2,}:", text))
+                return False
+
+            if sig_type == "riff":
+                # Require valid RIFF sub-type
+                if len(head) >= 12:
+                    riff_type = head[8:12]
+                    return riff_type in (b"WAVE", b"AVI ", b"WEBP")
+                return False
+
+            if sig_type == "lnk":
+                # Require header size == 0x4C and valid CLSID starts
+                if len(head) >= 20:
+                    return head[0:4] == b"L\x00\x00\x00"
+                return False
+
+        except OSError:
+            pass
+
+        return True
 
     def _disambiguate_type(
         self, source_path: Path, offset: int, types: list[str]

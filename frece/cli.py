@@ -27,7 +27,9 @@ from frece.logging import setup_logging
 from frece.partition import list_partitions
 from frece.recovery import DeletedFileRecovery
 from frece.sandbox import InputValidator
+from frece.metadata import extract as extract_metadata
 from frece.report import render_html_report
+from frece.scoring import score_batch
 from frece.timeline import (
     build_timeline,
     events_to_csv,
@@ -86,6 +88,10 @@ def main(argv: list[str] | None = None) -> int:
             return handle_fsstat(args)
         if args.command == "classify":
             return handle_classify(args)
+        if args.command == "metadata":
+            return handle_metadata(args)
+        if args.command == "score":
+            return handle_score(args)
     except FreceError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -501,6 +507,32 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Show only files at this priority level or above",
     )
+
+    # ── metadata ─────────────────────────────────────────────────────────────
+    metadata_parser = subparsers.add_parser(
+        "metadata",
+        help="Extract deep forensic metadata (EXIF GPS, PE timestamps, SQLite tables, PCAP IPs…)",
+    )
+    metadata_parser.add_argument("source", type=Path, help="File or directory to analyse")
+    metadata_parser.add_argument("--type", dest="file_type", default=None,
+        help="Force file type (jpeg/pe/sqlite/pcap/…). Auto-detected if omitted.")
+    metadata_parser.add_argument("--output", type=Path, default=None,
+        help="Write JSON results to file")
+
+    # ── score ─────────────────────────────────────────────────────────────────
+    score_parser = subparsers.add_parser(
+        "score",
+        help="Compute recovery confidence scores for carved/recovered artifacts",
+    )
+    score_parser.add_argument("manifest", type=Path,
+        help="Path to carve_manifest.json or recovery_manifest.json")
+    score_parser.add_argument("--output", type=Path, default=None,
+        help="Write scored manifest to JSON file")
+    score_parser.add_argument("--min-score", type=int, default=0, dest="min_score",
+        help="Only show artifacts with score >= this value")
+    score_parser.add_argument("--grade", default=None,
+        choices=["CONFIRMED","PROBABLE","POSSIBLE","SUSPECT","REJECTED"],
+        help="Filter by confidence grade")
 
     return parser
 
@@ -1246,6 +1278,116 @@ def handle_classify(args: argparse.Namespace) -> int:
 
     return 0
 
+
+
+def handle_metadata(args: argparse.Namespace) -> int:
+    """Handle the metadata command — deep forensic metadata extraction."""
+    source = args.source
+    forced_type = getattr(args, "file_type", None)
+
+    if source.is_file():
+        targets = [(source, forced_type)]
+    elif source.is_dir():
+        targets = [(f, None) for f in sorted(source.rglob("*")) if f.is_file()]
+    else:
+        print(f"Source not found: {source}", file=sys.stderr)
+        return 1
+
+    results = []
+    for filepath, ftype in targets:
+        if ftype is None:
+            # Auto-detect: use extension or filename suffix pattern
+            name = filepath.name
+            if "_" in name:
+                ftype = name.rsplit("_", 1)[-1].lower()
+                if not re.match(r"^[a-z0-9]{1,10}$", ftype):
+                    ftype = filepath.suffix.lstrip(".").lower() or "bin"
+            else:
+                ftype = filepath.suffix.lstrip(".").lower() or "bin"
+
+        meta = extract_metadata(filepath, ftype)
+        results.append(meta)
+
+    output = {
+        "source": str(source),
+        "files_analysed": len(results),
+        "results": results,
+    }
+    output_str = json.dumps(output, indent=2)
+
+    if args.output:
+        _write_text_output(args.output, output_str, RecoveryError, "metadata output")
+        print(f"Metadata extracted for {len(results)} file(s) → {args.output}")
+    else:
+        print(output_str)
+    return 0
+
+
+def handle_score(args: argparse.Namespace) -> int:
+    """Handle the score command — recovery confidence scoring."""
+    manifest_path = args.manifest
+    if not manifest_path.exists():
+        print(f"Manifest not found: {manifest_path}", file=sys.stderr)
+        return 1
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"Cannot read manifest: {exc}", file=sys.stderr)
+        return 1
+
+    base_dir = manifest_path.parent
+
+    # Support both carve_manifest and recovery_manifest
+    artifacts = manifest.get("carved_files") or manifest.get("recovered_files") or []
+    if not artifacts:
+        print("No artifacts found in manifest", file=sys.stderr)
+        return 1
+
+    scored = score_batch(artifacts, base_dir)
+
+    # Apply filters
+    min_score = getattr(args, "min_score", 0)
+    grade_filter = getattr(args, "grade", None)
+    if min_score:
+        scored = [a for a in scored if a.get("confidence_score", 0) >= min_score]
+    if grade_filter:
+        scored = [a for a in scored if a.get("confidence_grade") == grade_filter]
+
+    # Summary stats
+    grade_counts: dict[str, int] = {}
+    for a in scored:
+        g = a.get("confidence_grade", "UNKNOWN")
+        grade_counts[g] = grade_counts.get(g, 0) + 1
+
+    avg_score = (
+        sum(a.get("confidence_score", 0) for a in scored) / len(scored)
+        if scored else 0
+    )
+
+    output = {
+        "manifest": str(manifest_path),
+        "total_artifacts": len(artifacts),
+        "filtered_artifacts": len(scored),
+        "average_confidence": round(avg_score, 1),
+        "grade_breakdown": grade_counts,
+        "artifacts": scored,
+    }
+
+    output_str = json.dumps(output, indent=2)
+    if args.output:
+        _write_text_output(args.output, output_str, RecoveryError, "score output")
+        print(
+            f"Scored {len(scored)} artifacts: avg={avg_score:.0f} "
+            f"CONFIRMED={grade_counts.get('CONFIRMED',0)} "
+            f"PROBABLE={grade_counts.get('PROBABLE',0)} "
+            f"POSSIBLE={grade_counts.get('POSSIBLE',0)} "
+            f"SUSPECT={grade_counts.get('SUSPECT',0)} "
+            f"REJECTED={grade_counts.get('REJECTED',0)}"
+        )
+    else:
+        print(output_str)
+    return 0
 
 def resolve_case_dir(case_name: str, root: Path | None) -> Path:
     """Resolve the case directory from the configured case root."""
