@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "frece"
-version = "2.2.0"
+version = "2.3.0"
 description = "FRECE: Forensic Recovery and Evidence Collection Engine - Production-grade digital forensics CLI"
 readme = "README.md"
 requires-python = ">=3.11"
