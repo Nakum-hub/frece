@@ -46,6 +46,7 @@ def extract(file_path: Path, file_type: str) -> dict[str, Any]:
     extractors: dict[str, Any] = {
         "jpeg": _jpeg,
         "jpg": _jpeg,
+        "png": _png,
         "pdf": _pdf,
         "pe": _pe,
         "elf": _elf,
@@ -331,6 +332,79 @@ def _pe(path: Path) -> dict[str, Any]:
 
     file_type = "DLL" if result["is_dll"] else ("SYS" if result["is_system_file"] else "EXE")
     result["file_class"] = file_type
+
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PNG
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _png(path: Path) -> dict[str, Any]:
+    """Extract metadata from PNG files — IHDR dimensions + tEXt/iTXt chunks."""
+    result: dict[str, Any] = {}
+
+    with path.open("rb") as fh:
+        sig = fh.read(8)
+        if sig != b"\x89PNG\r\n\x1a\n":
+            raise MetadataError("Not a PNG file")
+
+        while True:
+            hdr = fh.read(8)
+            if len(hdr) < 8:
+                break
+            chunk_len = struct.unpack(">I", hdr[:4])[0]
+            chunk_type = hdr[4:8].decode("ascii", errors="replace")
+            chunk_data = fh.read(chunk_len)
+            fh.read(4)  # CRC
+
+            if chunk_type == "IHDR" and len(chunk_data) >= 13:
+                result["width"] = struct.unpack(">I", chunk_data[0:4])[0]
+                result["height"] = struct.unpack(">I", chunk_data[4:8])[0]
+                result["bit_depth"] = chunk_data[8]
+                color_types = {0: "greyscale", 2: "RGB", 3: "indexed",
+                               4: "greyscale+alpha", 6: "RGBA"}
+                result["color_type"] = color_types.get(chunk_data[9], str(chunk_data[9]))
+                result["interlaced"] = bool(chunk_data[12])
+
+            elif chunk_type == "tEXt":
+                # tEXt: keyword\x00text
+                nul = chunk_data.find(b"\x00")
+                if nul > 0:
+                    key = chunk_data[:nul].decode("latin-1", errors="replace")
+                    val = chunk_data[nul+1:].decode("latin-1", errors="replace")
+                    result[f"text_{key.lower().replace(' ','_')}"] = val[:256]
+
+            elif chunk_type == "iTXt":
+                # iTXt: keyword NUL compressed_flag NUL method NUL lang NUL xlated NUL text
+                nul = chunk_data.find(b"\x00")
+                if nul > 0:
+                    key = chunk_data[:nul].decode("utf-8", errors="replace")
+                    rest = chunk_data[nul+1:]
+                    # Skip compression flag, method, lang, translated key
+                    parts = rest.split(b"\x00", 4)
+                    if len(parts) >= 5:
+                        val = parts[4].decode("utf-8", errors="replace")
+                        result[f"itxt_{key.lower().replace(' ','_')}"] = val[:256]
+
+            elif chunk_type == "gAMA":
+                if len(chunk_data) == 4:
+                    gamma = struct.unpack(">I", chunk_data)[0] / 100000.0
+                    result["gamma"] = gamma
+
+            elif chunk_type == "pHYs" and len(chunk_data) >= 9:
+                x_ppu = struct.unpack(">I", chunk_data[0:4])[0]
+                y_ppu = struct.unpack(">I", chunk_data[4:8])[0]
+                unit = chunk_data[8]
+                if unit == 1:  # metres
+                    result["dpi_x"] = round(x_ppu * 0.0254)
+                    result["dpi_y"] = round(y_ppu * 0.0254)
+
+            elif chunk_type == "IEND":
+                break
+
+            if chunk_len > 64 * 1024 * 1024:
+                break  # Skip suspiciously large chunks
 
     return result
 

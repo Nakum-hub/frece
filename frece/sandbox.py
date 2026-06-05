@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Optional
 
+import re as _sandbox_re
 from frece.errors import SandboxError
 
 
@@ -14,6 +15,7 @@ class InputValidator:
     MAX_PATH_LENGTH = 4096
     MAX_CASE_NAME_LENGTH = 255
     DANGEROUS_CHARS = {"<", ">", "|", "&", ";", "`", "$", "{", "}"}
+    _CASE_NAME_RE = _sandbox_re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,253}$|^[A-Za-z0-9]$')
 
     @staticmethod
     def validate_path(path_str: str, max_length: int = 4096) -> Path:
@@ -64,30 +66,45 @@ class InputValidator:
         return path
 
     @staticmethod
+
+    @staticmethod
     def validate_case_name(name: str) -> str:
-        """Validate case name.
+        """Validate a case name — strict whitelist, prevents path traversal.
 
-        Args:
-            name: Case name to validate.
-
-        Returns:
-            Validated case name.
+        Allows only: letters, digits, hyphen, underscore, period.
+        Rejects: slashes, spaces, null bytes, shell metacharacters, '..'.
 
         Raises:
-            SandboxError: If validation fails.
+            SandboxError: If the name fails any validation rule.
         """
+        if not name:
+            raise SandboxError(
+                "Case name cannot be empty",
+                remediation="Provide a non-empty case name",
+            )
         if len(name) > InputValidator.MAX_CASE_NAME_LENGTH:
             raise SandboxError(
                 f"Case name exceeds {InputValidator.MAX_CASE_NAME_LENGTH} characters",
-                remediation=f"Use shorter name (current: {len(name)})",
+                remediation=f"Use a shorter case name (current: {len(name)})",
             )
-
-        if any(c in name for c in InputValidator.DANGEROUS_CHARS):
+        if "\x00" in name:
             raise SandboxError(
-                "Case name contains dangerous characters",
-                remediation="Use only alphanumeric, dash, underscore, period, and space.",
+                "Case name contains null bytes",
+                remediation="Remove null bytes from the case name",
             )
-
+        if ".." in name:
+            raise SandboxError(
+                "Case name contains path traversal sequence '..'",
+                remediation="Remove '..' from the case name",
+            )
+        if not InputValidator._CASE_NAME_RE.match(name):
+            raise SandboxError(
+                f"Case name '{name[:40]}' contains invalid characters",
+                remediation=(
+                    "Use only letters, digits, hyphens, underscores, and periods. "
+                    "Example: CASE-2025-001"
+                ),
+            )
         return name
 
     @staticmethod

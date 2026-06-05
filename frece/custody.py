@@ -2,6 +2,14 @@
 
 import hashlib
 import hmac
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _AESGCM
+    from cryptography.hazmat.primitives.kdf.scrypt import Scrypt as _Scrypt
+    _CRYPTO_AVAILABLE = True
+except ImportError:
+    _AESGCM = None  # type: ignore[assignment,misc]
+    _Scrypt = None  # type: ignore[assignment,misc]
+    _CRYPTO_AVAILABLE = False
 import json
 import os
 import sqlite3
@@ -399,3 +407,115 @@ def rotate_case_secret_key(case_dir: Path, case_name: Optional[str] = None) -> P
     os.replace(key_staging_path, key_path)
     _fsync_file(key_path)
     return key_path
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AES-256-GCM custody database encryption at rest
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ENCRYPT_MAGIC = b"FRECE_ENC_V1"
+_SALT_LEN = 32
+_NONCE_LEN = 12
+
+
+def encrypt_custody_db(db_path: Path, passphrase: str) -> Path:
+    """Encrypt custody.db at rest using AES-256-GCM.
+
+    The encrypted file is written alongside the database as
+    ``custody.db.enc``.  The original is NOT removed — call
+    db_path.unlink() after verifying if you want to delete it.
+
+    Derives a 256-bit key from the passphrase using scrypt
+    (N=2^20, r=8, p=1) so that brute-force is expensive even on GPUs.
+
+    Args:
+        db_path:    Path to the plaintext ``custody.db``.
+        passphrase: User-supplied passphrase (UTF-8 string).
+
+    Returns:
+        Path to the encrypted ``.enc`` file.
+
+    Raises:
+        CustodyError: If cryptography is not installed.
+    """
+    if not _CRYPTO_AVAILABLE:
+        raise CustodyError(
+            "cryptography package not installed",
+            remediation="pip install cryptography",
+        )
+
+    plaintext = db_path.read_bytes()
+    salt = os.urandom(_SALT_LEN)
+
+    # Derive 256-bit key via scrypt
+    kdf = _Scrypt(salt=salt, length=32, n=2**20, r=8, p=1)
+    key = kdf.derive(passphrase.encode("utf-8"))
+
+    nonce = os.urandom(_NONCE_LEN)
+    aesgcm = _AESGCM(key)
+    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+
+    enc_path = db_path.with_suffix(".db.enc")
+    with open(enc_path, "wb") as fh:
+        fh.write(_ENCRYPT_MAGIC)
+        fh.write(salt)      # 32 bytes
+        fh.write(nonce)     # 12 bytes
+        fh.write(ciphertext)  # variable (plaintext + 16-byte GCM tag)
+        fh.flush()
+        os.fsync(fh.fileno())
+
+    return enc_path
+
+
+def decrypt_custody_db(enc_path: Path, passphrase: str, output_path: Path | None = None) -> Path:
+    """Decrypt a ``custody.db.enc`` file back to plaintext SQLite.
+
+    Args:
+        enc_path:    Path to the ``.enc`` file.
+        passphrase:  Passphrase used during encryption.
+        output_path: Where to write the decrypted DB (default: same dir, ``custody.db``).
+
+    Returns:
+        Path to the decrypted database.
+
+    Raises:
+        CustodyError: If decryption fails (wrong passphrase or corrupted file).
+    """
+    if not _CRYPTO_AVAILABLE:
+        raise CustodyError(
+            "cryptography package not installed",
+            remediation="pip install cryptography",
+        )
+
+    raw = enc_path.read_bytes()
+    magic_len = len(_ENCRYPT_MAGIC)
+    if not raw[:magic_len] == _ENCRYPT_MAGIC:
+        raise CustodyError(
+            f"Not a FRECE encrypted file: {enc_path}",
+            remediation="Ensure you are using a file created by frece custody encrypt",
+        )
+
+    pos = magic_len
+    salt = raw[pos: pos + _SALT_LEN]
+    pos += _SALT_LEN
+    nonce = raw[pos: pos + _NONCE_LEN]
+    pos += _NONCE_LEN
+    ciphertext = raw[pos:]
+
+    kdf = _Scrypt(salt=salt, length=32, n=2**20, r=8, p=1)
+    key = kdf.derive(passphrase.encode("utf-8"))
+
+    try:
+        aesgcm = _AESGCM(key)
+        plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+    except Exception as exc:
+        raise CustodyError(
+            "Decryption failed — wrong passphrase or corrupted file",
+            remediation="Verify the passphrase is correct",
+        ) from exc
+
+    if output_path is None:
+        output_path = enc_path.parent / "custody.db"
+
+    output_path.write_bytes(plaintext)
+    return output_path
+

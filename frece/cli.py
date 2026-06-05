@@ -27,8 +27,9 @@ from frece.logging import setup_logging
 from frece.partition import list_partitions
 from frece.recovery import DeletedFileRecovery
 from frece.sandbox import InputValidator
+from frece.ewf import open_image, is_ewf_image
 from frece.metadata import extract as extract_metadata
-from frece.report import render_html_report
+from frece.report import render_html_report, render_dfxml_report
 from frece.scoring import score_batch
 from frece.timeline import (
     build_timeline,
@@ -235,6 +236,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filesystem byte offset in sectors",
     )
     scan_parser.add_argument(
+        "--progress", action="store_true", default=False,
+        help="Show real-time progress bar",
+    )
+    scan_parser.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -382,7 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     report_parser.add_argument(
         "--format",
-        choices=["json", "text", "html"],
+        choices=["json", "text", "html", "dfxml"],
         default="json",
         dest="report_format",
     )
@@ -604,7 +609,7 @@ def check_tools() -> int:
 
 
 def handle_carve(args: argparse.Namespace) -> int:
-    """Handle the carve command."""
+    """Handle the carve command — supports raw (.dd) and EWF/E01 images."""
     logger = setup_logging(name="frece.carve")
     config = load_config()
     if args.chunk_size is not None:
@@ -614,8 +619,25 @@ def handle_carve(args: argparse.Namespace) -> int:
     if args.max_video_size is not None:
         config.max_video_size = args.max_video_size
 
+    yara_rules_path = getattr(args, "yara_rules", None)
+
     carver = StreamingCarver(config)
-    manifest = carver.carve(args.source, args.output, verify=not args.no_verify)
+
+    with open_image(args.source) as handle:
+        source_path = handle.raw_path
+        if is_ewf_image(args.source):
+            logger.info(json.dumps({"event": "EWF_EXPORT", "source": str(args.source),
+                                    "raw_path": str(source_path)}))
+            print("E01/EWF image detected — exported to raw for carving",
+                  file=sys.stderr)
+
+        show_prog = getattr(args, "progress", False)
+        manifest = carver.carve(
+            source_path, args.output,
+            verify=not args.no_verify,
+            yara_rules_path=yara_rules_path,
+            show_progress=show_prog,
+        )
 
     output = manifest.to_dict()
     output["manifest_path"] = str(args.output / "carve_manifest.json")
@@ -881,7 +903,9 @@ def handle_report(args: argparse.Namespace) -> int:
                 {"path": str(manifest_path), "error": str(exc)}
             )
 
-    if args.report_format == "html":
+    if args.report_format == "dfxml":
+        output_str = _render_dfxml_report(report, args.case_name)
+    elif args.report_format == "html":
         output_str = _render_html_report(report, args.case_name)
     elif args.report_format == "text":
         output_str = _render_text_report(report)
@@ -969,6 +993,11 @@ def _render_text_report(report: dict) -> str:
 def _render_html_report(report: dict, case_name: str) -> str:
     """Delegate to report.py (HTML kept in dedicated module for line-length compliance)."""
     return render_html_report(report, case_name)
+
+
+def _render_dfxml_report(report: dict, case_name: str) -> str:
+    """Render DFXML court-admissible forensic XML output."""
+    return render_dfxml_report(report, case_name)
 
 def handle_timeline(args: argparse.Namespace) -> int:
     """Handle the timeline command."""

@@ -8,9 +8,21 @@ import struct
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO, Generator
+from typing import Any, BinaryIO, Generator
 
 from frece.classifier import classify_file
+try:
+    from tqdm import tqdm as _tqdm
+    _TQDM_AVAILABLE = True
+except ImportError:
+    _tqdm = None  # type: ignore[assignment]
+    _TQDM_AVAILABLE = False
+try:
+    import yara as _yara_mod
+    _YARA_AVAILABLE = True
+except ImportError:
+    _yara_mod = None  # type: ignore[assignment]
+    _YARA_AVAILABLE = False
 from frece.metadata import extract as extract_metadata
 from frece.scoring import score_artifact
 from frece.errors import CarveError, ValidationError
@@ -38,10 +50,13 @@ class CarvedFile:
     confidence_score: int = 0
     confidence_grade: str = "UNKNOWN"
     artifact_metadata: dict = None  # type: ignore[assignment]
+    yara_matches: list = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.artifact_metadata is None:
             self.artifact_metadata = {}
+        if self.yara_matches is None:
+            self.yara_matches = []
 
 
 @dataclass
@@ -150,6 +165,85 @@ class SignatureDatabase:
 
         # ── Crypto / forensic containers ─────────────────────────────────────
         b"-----BEGIN ": "pem",             # PEM certificate / key
+
+        # ── Virtual machine disk images ──────────────────────────────────────
+        b"KDMV": "vmdk",                  # VMware VMDK sparse extent
+        b"COWD": "vmdk",                  # VMware VMDK COW
+        b"conectix": "vhd",               # Microsoft VHD
+        b"vhdxfile": "vhdx",              # Microsoft VHDX
+        b"QFI\xfb": "qcow2",             # QEMU QCOW2
+
+        # ── Windows forensic artifacts ────────────────────────────────────────
+        b"SCCA": "prefetch",              # Windows Prefetch
+        b"FILE": "mft_record",            # NTFS $MFT file record
+        b"INDX": "indx_record",           # NTFS $INDEX_ALLOCATION
+
+        # ── Mobile / Apple ────────────────────────────────────────────────────
+        b"bplist00": "plist",             # Apple binary property list
+        b"\xca\xfe\xba\xbe": "macho_fat",  # Mach-O fat binary
+        b"\xcf\xfa\xed\xfe": "macho",       # Mach-O 64-bit LE
+        b"\xce\xfa\xed\xfe": "macho",       # Mach-O 32-bit LE
+
+        # ── Archive / compression (additional) ───────────────────────────────
+        b"\x28\xb5\x2f\xfd": "zst",   # Zstandard compressed
+        b"\x04\x22\x4d\x18": "lz4",   # LZ4 frame
+        b"LZIP": "lzip",                  # LZIP
+
+        # ── Crypto wallets ────────────────────────────────────────────────────
+        b"\x01\x42\x44\x34": "bitcoin_wallet",  # Bitcoin Core wallet.dat hint
+
+        # ── Additional executables ────────────────────────────────────────────
+        b"PK\x03\x06": "zip",           # ZIP end-of-central-dir record
+        # ── Databases ─────────────────────────────────────────────────────────
+        b"\x00\x01\x00\x00Standard": "mdb",   # Microsoft Access MDB
+        b"\xfe\xff\x00M": "mdb",               # Access MDB unicode
+
+        # ── Additional Windows artifacts ──────────────────────────────────────
+        b"RSTR": "log_record",            # NTFS $LogFile restart
+        b"RCRD": "log_record",            # NTFS $LogFile record
+        b"LOGF": "usnjrnl",               # NTFS USN Journal
+
+        # ── Email / messaging ─────────────────────────────────────────────────
+        b"X-Mozilla-Status:": "mbox",     # Thunderbird mbox header
+        b"From - ": "mbox",               # Unix mbox
+
+        # ── Certificates / keys ───────────────────────────────────────────────
+        b"\x30\x82": "der",             # DER-encoded certificate (ASN.1)
+        b"PGPKEYS": "pgp",               # PGP keyring
+
+        # ── Media additional ──────────────────────────────────────────────────
+        b"\x00\x00\x01\x00": "ico",   # Windows ICO
+        b"#!AMR": "amr",                 # Adaptive Multi-Rate audio
+        b"MAC ": "ape",                  # Monkey's Audio
+        b"FORM": "aiff",                 # AIFF audio
+        b"FLV\x01": "flv",              # Flash Video
+        b"\x1a\x45\xdf\xa3": "mkv",  # Matroska/WebM
+
+        # ── Script / config ───────────────────────────────────────────────────
+        b"[HKEY_": "reg_export",         # Windows .reg export file
+        b"Windows Registry Editor": "reg_export",
+        b"[boot loader]": "ini",         # boot.ini
+        b"[operating systems]": "ini",
+        b"#!/usr/bin/env python": "py",
+        b"#!/usr/bin/env ruby": "rb",
+        b"#!/usr/bin/perl": "pl",
+        b"#!/usr/bin/node": "js",
+
+        # ── Disk / partition ──────────────────────────────────────────────────
+        b"\x55\xaa": "mbr",            # Master Boot Record (sector 0 sig)
+        b"EFI PART": "gpt",              # GUID Partition Table header
+
+        # ── Backup / container ────────────────────────────────────────────────
+        b"\x53\x51\x4c\x69": "sqlite",  # SQLite (short alias)
+        b"\x4d\x5a\x90\x00": "pe",   # PE with common second byte
+        b"VMDK": "vmdk",                 # VMDK descriptor (text)
+        b"# Disk DescriptorFile": "vmdk",
+        b"# Virtual Disk Image": "vdi",
+
+        # ── Forensic / evidence ───────────────────────────────────────────────
+        b"HDMP": "minidump",             # Windows Minidump
+        b"MDMP": "minidump",             # Windows Minidump (alternate)
+        b"PAGE": "hiberfil",             # Windows hiberfil.sys
     }
 
     # Signatures longer than this won't be split across chunk boundaries.
@@ -178,6 +272,8 @@ class StreamingCarver:
 
     def __init__(self, chunk_size: int | object = 64 * 1024 * 1024, max_sig_len: int = 2048):
         self.max_video_size = 0
+        self._active_yara_rules: Any = None
+        self.logger = __import__("logging").getLogger(__name__)
         if isinstance(chunk_size, int):
             self.chunk_size = chunk_size
             self.max_sig_len = max_sig_len
@@ -193,14 +289,33 @@ class StreamingCarver:
         source_path: Path,
         output_dir: Path,
         verify: bool = True,
+        yara_rules_path: object = None,
+        show_progress: bool = False,
     ):
         """Carve files from source with streaming reads."""
         source_path = Path(source_path)
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Load YARA rules if provided
+        self._active_yara_rules = None
+        if yara_rules_path is not None and _YARA_AVAILABLE:
+            try:
+                _yp = Path(str(yara_rules_path))
+                if _yp.is_dir():
+                    rf = {str(f.stem): str(f) for f in _yp.rglob("*.yar")}
+                    rf.update({str(f.stem): str(f) for f in _yp.rglob("*.yara")})
+                    if rf:
+                        self._active_yara_rules = _yara_mod.compile(filepaths=rf)
+                elif _yp.is_file():
+                    self._active_yara_rules = _yara_mod.compile(str(_yp))
+            except Exception as _ye:
+                self.logger.warning(f"Failed to load YARA rules: {_ye}")
+
         try:
-            source_hash, found_sigs = self._scan_and_hash(source_path)
+            source_hash, found_sigs = self._scan_and_hash(
+                source_path, show_progress=show_progress
+            )
         except OSError as exc:
             raise CarveError(
                 f"Cannot open source: {source_path}",
@@ -256,6 +371,20 @@ class StreamingCarver:
                 validation_passed=validation_passed,
                 validation_notes=validation_notes,
             )
+
+            # YARA rule matching
+            if self._active_yara_rules is not None:
+                try:
+                    file_data = output_file.read_bytes()
+                    matches = self._active_yara_rules.match(data=file_data)
+                    carved_file.yara_matches = [
+                        {"rule": m.rule, "tags": m.tags, "namespace": m.namespace}
+                        for m in matches
+                    ]
+                    if matches:
+                        carved_file.forensic_priority = "CRITICAL"
+                except Exception:
+                    pass
 
             # Entropy + forensic classification
             try:
@@ -323,7 +452,9 @@ class StreamingCarver:
 
         return manifest
 
-    def _scan_and_hash(self, source_path: Path) -> tuple[str, dict[int, list[str]]]:
+    def _scan_and_hash(
+        self, source_path: Path, show_progress: bool = False
+    ) -> tuple[str, dict[int, list[str]]]:
         """Single pass: compute SHA256 and collect all signature positions."""
         sha256 = hashlib.sha256()
         found_sigs: dict[int, list[str]] = {}
@@ -483,7 +614,8 @@ class StreamingCarver:
         try:
             with open(source_path, "rb") as fh:
                 fh.seek(offset)
-                head = fh.read(32)
+                # Bug-B fix: read 128 bytes so PE offset field (at byte 60) is reachable
+                head = fh.read(128)
 
             if sig_type == "mp3":
                 if len(head) < 4:
@@ -530,11 +662,13 @@ class StreamingCarver:
                 return len(head) >= 2  # at minimum just BM bytes
 
             if sig_type == "pe":
-                # Require valid PE offset pointer (64-1024 range)
+                # Bug-B fix: PE offset field is at byte 60 — need 128 bytes minimum.
+                # Original code read only 32 bytes so pe_off was never checked.
                 if len(head) >= 64:
                     pe_off = int.from_bytes(head[60:64], "little")
                     return 64 <= pe_off <= 1024
-                return False
+                # Fewer than 64 bytes: still accept if MZ is valid (small files)
+                return len(head) >= 2
 
             if sig_type == "eml":
                 # Require at least one more RFC-822 header on the next line

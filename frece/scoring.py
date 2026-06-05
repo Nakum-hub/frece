@@ -234,13 +234,14 @@ def score_batch(
         entropy = art.get("entropy", 0.0)
         val_ok = art.get("validation_passed", False)
         val_notes = art.get("validation_notes", "")
+        # Use pre-computed metadata from manifest if available (Bug-C: same algo)
+        metadata = art.get("artifact_metadata") or None
 
-        # Find the file on disk
+        # Find the file on disk — try output_path first, then reconstruct
         output_path = art.get("output_path") or art.get("carved_path")
         if not output_path:
-            # For carved files, reconstruct the path
             offset = art.get("offset", 0)
-            fname = f"{offset:016d}_{ftype}"
+            fname = f"{offset:016x}_{ftype}"
             output_path = str(base_dir / fname)
 
         file_path = Path(output_path)
@@ -251,6 +252,7 @@ def score_batch(
             entropy=entropy,
             validation_passed=val_ok,
             validation_notes=val_notes,
+            metadata=metadata,
         )
 
         art_copy = dict(art)
