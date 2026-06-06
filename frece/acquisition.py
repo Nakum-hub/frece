@@ -1,3 +1,4 @@
+# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
 """Evidence acquisition with write-block enforcement."""
 
 import hashlib

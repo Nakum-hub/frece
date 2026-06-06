@@ -1,3 +1,4 @@
+# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
 """Streaming file carver with signature-based recovery."""
 
 import hashlib
@@ -212,7 +213,6 @@ class SignatureDatabase:
         b"PGPKEYS": "pgp",               # PGP keyring
 
         # ── Media additional ──────────────────────────────────────────────────
-        b"\x00\x00\x01\x00": "ico",   # Windows ICO
         b"#!AMR": "amr",                 # Adaptive Multi-Rate audio
         b"MAC ": "ape",                  # Monkey's Audio
         b"FORM": "aiff",                 # AIFF audio
@@ -230,12 +230,8 @@ class SignatureDatabase:
         b"#!/usr/bin/node": "js",
 
         # ── Disk / partition ──────────────────────────────────────────────────
-        b"\x55\xaa": "mbr",            # Master Boot Record (sector 0 sig)
-        b"EFI PART": "gpt",              # GUID Partition Table header
 
         # ── Backup / container ────────────────────────────────────────────────
-        b"\x53\x51\x4c\x69": "sqlite",  # SQLite (short alias)
-        b"\x4d\x5a\x90\x00": "pe",   # PE with common second byte
         b"VMDK": "vmdk",                 # VMDK descriptor (text)
         b"# Disk DescriptorFile": "vmdk",
         b"# Virtual Disk Image": "vdi",

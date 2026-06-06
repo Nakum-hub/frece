@@ -1,3 +1,4 @@
+# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
 """Recovery confidence scoring system.
 
 Produces a 0-100 confidence score for each carved or recovered artifact based

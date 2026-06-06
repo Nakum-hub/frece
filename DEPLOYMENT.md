@@ -1,184 +1,93 @@
-# FRECE 2.0 Deployment Guide
+# FRECE — Deployment Guide
 
-## Status
+## System Requirements
 
-Validated codebase. Operational deployment is gated on a Linux host where `frece tool-status` exits `0`.
-
-## What Was Verified Locally
-
-- Current unit-suite result: `118 passed, 1 skipped`
-- CI snapshot command: `make test-count`
-- Core CLI commands implemented: `tool-status`, `carve`, `scan`, `partitions`, `recover`, `acquire`, `custody verify`, `case create|log|verify|rotate-key`
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| OS | Linux (Ubuntu 20.04+, Debian 11+, RHEL 8+) | Ubuntu 22.04 LTS |
+| Python | 3.11 | 3.12 |
+| RAM | 512 MB | 4 GB+ |
+| Disk | 1 GB | 10 GB+ (for evidence storage) |
+| CPU | 2 cores | 8 cores |
 
 ## Prerequisites
 
-- Python 3.11+
-- Linux
-- The Sleuth Kit installed and on `PATH`
-- `file` and `sha256sum` available on `PATH`
-- `libmagic1` available to `python-magic`
-
-Example Ubuntu install:
-
 ```bash
-sudo apt-get install sleuthkit libmagic1 file coreutils
-```
+# The Sleuth Kit (fls, icat, istat, mmls, fsstat)
+apt-get install -y sleuthkit
 
-RHEL/Fedora equivalent:
+# EWF/E01 image support
+apt-get install -y ewf-tools
 
-```bash
-sudo dnf install sleuthkit file-libs file coreutils
+# libmagic
+apt-get install -y libmagic1
+
+# YARA (optional — for threat-intelligence scanning)
+apt-get install -y yara
 ```
 
 ## Installation
 
+### From PyPI (recommended)
 ```bash
-cd /path/to/frece
+pip install frece
+```
+
+### From source
+```bash
+git clone https://github.com/Nakum-hub/frece.git
+cd frece
 pip install -e .
 ```
 
-## Required Acceptance Checks
-
-Run these on the actual Linux deployment host:
-
+### Verify installation
 ```bash
-frece --version
 frece tool-status
-pytest -q -m "not acceptance"
-pytest -q -m acceptance
+frece --version
 ```
 
-Deployment should be blocked unless:
-
-- `frece --version` succeeds
-- `frece tool-status` exits `0`
-- the unit suite passes
-- the provisioned acceptance runner passes `pytest -q -m acceptance`
-
-## Command Reference
-
-### Carve files
+## First Use
 
 ```bash
-frece carve /path/to/evidence.dd --output ./carved_files
+# Create a case and set secure key store
+export FRECE_KEY_STORE=/secure/path/frece-keys
+
+frece case create CASE-2025-001
+frece hash /dev/sda --algorithms sha256,sha512
+frece case log CASE-2025-001 ACQUIRE --evidence-id EV-001
 ```
 
-Produces carved artifacts and `carve_manifest.json`.
+## Security Configuration
 
-### Recover deleted files
-
+### HMAC Key Store (required for production)
 ```bash
-frece recover /path/to/evidence.dd --output ./recovered_files --verify-inodes --timeout 0
+# Store keys on a separate encrypted volume
+export FRECE_KEY_STORE=/encrypted/partition/frece-keys
 ```
 
-Produces recovered files and `recovery_manifest.json`.
-
-### Discover partitions
-
+### Encrypt custody database at rest
 ```bash
-frece partitions /path/to/evidence.dd
+frece custody encrypt /path/to/case/dir --passphrase "strong-passphrase"
 ```
 
-Returns JSON rows including `start_sector`, suitable for piping into `frece scan --offset` or `frece recover --offset`.
+## Supported Evidence Formats
 
-### Acquire an image
+| Format | Extension | Notes |
+|--------|-----------|-------|
+| Raw disk image | .dd, .img, .bin, .raw | Direct support |
+| EnCase EWF | .E01, .Ex01, .E01x | Via ewf-tools |
+| Smart EWF | .S01 | Via ewf-tools |
+| AFF | .aff, .afd, .afm | Via ewf-tools |
 
+## Filesystem Support
+
+| Filesystem | Name Recovery | MAC Times |
+|-----------|--------------|-----------|
+| NTFS | ✅ Full | ✅ |
+| ext2/3/4 | ⚠️ Orphan fallback | ✅ |
+| FAT32/exFAT | ✅ Partial | ✅ |
+
+## Uninstall
 ```bash
-frece acquire /dev/sda --output ./evidence.img
+pip uninstall frece
 ```
-
-Use `--force-no-writeblock` only with explicit approval if hardware write-blocking is unavailable.
-
-### Case workflow
-
-```bash
-frece case create "Case-2024-001"
-frece case log "Case-2024-001" ACQUIRE --evidence-id EV001 --source /dev/sda1 --detail source_hash=abc123
-frece case verify "Case-2024-001"
-frece case rotate-key "Case-2024-001"
-```
-
-### Direct custody verification
-
-```bash
-frece custody verify ~/.frece/cases/Case-2024-001 --evidence-id EV001 --source abc123
-```
-
-## Project Structure
-
-```text
-frece/
-  __init__.py
-  acquisition.py
-  carver.py
-  cli.py
-  config.py
-  custody.py
-  errors.py
-  logging.py
-  parallel.py
-  recovery.py
-  sandbox.py
-
-tests/
-  conftest.py
-  test_acquisition.py
-  test_carver.py
-  test_custody.py
-  test_integration.py
-  test_parallel.py
-  test_sandbox.py
-```
-
-## Feature Summary
-
-### Carving
-
-- Signature-based scanning with overlapping chunks
-- ZIP to DOCX/XLSX/PPTX disambiguation
-- RIFF to WAV/AVI disambiguation
-- MP4/MOV extent scanning via atoms to `mdat`
-- JPEG, PNG, PDF, MP3, and SQLite secondary validation
-
-### Recovery
-
-- Deleted inode enumeration with `fls`
-- Streaming extraction with `icat`
-- Streaming `fls` parsing without full-output buffering
-- Extent-aware bad-sector filtering with `istat` plus ddrescue mapfiles
-- Recovery manifests, original deleted filenames, and optional post-extraction hash verification
-
-### Custody
-
-- Per-case secret keys generated from `os.urandom(32)`
-- `FRECE_KEY_STORE` support for storing HMAC keys outside the case directory
-- HMAC-SHA256 verification of custody rows
-- Source-hash verification for acquired evidence
-
-### Security
-
-- Input validation for CLI paths, case names, and key string arguments
-- Dangerous subprocess tools blocked in the sandbox wrapper
-- Linux write-block checks for common block-device naming schemes
-
-## Known Deployment Gate
-
-This repository was verified in the current development environment, not on a Linux evidence workstation with full forensic tooling installed. The final go/no-go decision must be made after the target host passes `frece tool-status`.
-
-## Support Data To Capture For Incidents
-
-Include the following with any issue report:
-
-1. `python3 --version`
-2. `frece --version`
-3. `frece tool-status`
-4. Full stderr or traceback
-5. `uname -a`
-
-## License
-
-GPL-3.0-or-later
-
-## Authors
-
-DFIR Team

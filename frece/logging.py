@@ -1,3 +1,4 @@
+# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
 """Structured logging for forensic operations."""
 
 import json

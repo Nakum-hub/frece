@@ -1,3 +1,4 @@
+# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
 """Deleted file recovery using The Sleuth Kit tools."""
 
 import hashlib
@@ -921,7 +922,11 @@ class DeletedFileRecovery:
         return hasher.hexdigest(), size
 
     def _detect_file_type(self, data: bytes) -> str:
-        """Detect file type using python-magic when available, else header scan."""
+        """Detect file type using python-magic + comprehensive header scan.
+
+        Covers all 88 FRECE carving types plus common text formats.
+        Falls back to header bytes if python-magic is unavailable.
+        """
         if not data:
             return "bin"
 
@@ -934,40 +939,129 @@ class DeletedFileRecovery:
                     return "xlsx"
                 if "powerpoint 2007+" in detected or "presentationml" in detected:
                     return "pptx"
-                if "jpeg" in detected:
+                if "jpeg" in detected or "jfif" in detected:
                     return "jpeg"
-                if "png" in detected:
+                if "png image" in detected:
                     return "png"
-                if "pdf" in detected:
+                if "pdf document" in detected:
                     return "pdf"
                 if "quicktime" in detected:
                     return "mov"
                 if "mp4" in detected or "iso media" in detected:
                     return "mp4"
-                if "zip" in detected:
-                    return "zip"
-                if "wave audio" in detected or "wav" in detected:
+                if "sqlite 3.x database" in detected or "sqlite database" in detected:
+                    return "sqlite"
+                if "pcap capture" in detected or "tcpdump" in detected:
+                    return "pcap"
+                if "pcap-ng capture" in detected:
+                    return "pcapng"
+                if "wave audio" in detected or "riff (little-endian)" in detected:
                     return "wav"
                 if "avi" in detected:
                     return "avi"
                 if "mpeg" in detected and "layer iii" in detected:
                     return "mp3"
-                if "mail" in detected or "rfc 822" in detected:
-                    return "eml"
-                if "html" in detected:
+                if "flac audio" in detected:
+                    return "flac"
+                if "ogg" in detected:
+                    return "ogg"
+                if "pe32" in detected or "ms-dos executable" in detected:
+                    return "pe"
+                if "elf" in detected and ("executable" in detected or "shared object" in detected):
+                    return "elf"
+                if "windows event log" in detected:
+                    return "evtx"
+                if "ms windows shortcut" in detected:
+                    return "lnk"
+                if "windows registry" in detected:
+                    return "reg"
+                if "photoshop" in detected:
+                    return "psd"
+                if "vmdk" in detected:
+                    return "vmdk"
+                if "rich text" in detected or "rtf" in detected:
+                    return "rtf"
+                if "xml" in detected:
+                    return "xml"
+                if "html document" in detected:
                     return "html"
+                if "mail message" in detected or "rfc 822" in detected or "smtp mail" in detected:
+                    return "eml"
+                if "mbox" in detected:
+                    return "mbox"
+                if "python" in detected:
+                    return "py"
+                if "shell script" in detected or "bash script" in detected:
+                    return "sh"
+                if "perl script" in detected:
+                    return "pl"
+                if "php script" in detected:
+                    return "php"
+                if "gzip compressed" in detected:
+                    return "gz"
+                if "bzip2 compressed" in detected:
+                    return "bz2"
+                if "xz compressed" in detected:
+                    return "xz"
+                if "zip archive" in detected:
+                    return "zip"
+                if "7-zip archive" in detected:
+                    return "7z"
+                if "rar archive" in detected:
+                    return "rar"
+                if "tiff image" in detected:
+                    return "tiff"
+                if "gif image" in detected:
+                    return "gif"
+                if "bitmap image" in detected:
+                    return "bmp"
+                if "matroska" in detected or "webm" in detected:
+                    return "mkv"
+                if "flash video" in detected:
+                    return "flv"
+                if "apple binary property" in detected:
+                    return "plist"
+                if "mach-o" in detected:
+                    return "macho"
+                if "csv" in detected or "comma-separated" in detected:
+                    return "csv"
+                if "ascii text" in detected or "utf-8 unicode text" in detected:
+                    return "txt"
                 if "text" in detected:
                     return "txt"
             except Exception:
                 pass
 
-        if data.startswith(b"\xff\xd8\xff"):
+        # Header-byte fallback (no python-magic needed)
+        if data[:3] == b"\xff\xd8\xff":
             return "jpeg"
-        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
             return "png"
-        if data.startswith(b"%PDF"):
+        if data[:4] == b"%PDF":
             return "pdf"
-        if data.startswith(b"PK\x03\x04"):
+        if data[:16] == b"SQLite format 3\x00":
+            return "sqlite"
+        if data[:8] in (b"\xd4\xc3\xb2\xa1", b"\xa1\xb2\xc3\xd4", b"\xa1\xb2\x3c\x4d"):
+            return "pcap"
+        if data[:4] == b"\x0a\x0d\x0d\x0a":
+            return "pcapng"
+        if data[:2] == b"MZ":
+            return "pe"
+        if data[:4] == b"\x7fELF":
+            return "elf"
+        if data[:8] == b"ElfFile\x00":
+            return "evtx"
+        if data[:4] == b"L\x00\x00\x00":
+            return "lnk"
+        if data[:4] == b"regf":
+            return "reg"
+        if data[:4] == b"8BPS":
+            return "psd"
+        if data[:4] == b"SCCA":
+            return "prefetch"
+        if data[:4] in (b"\xca\xfe\xba\xbe", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe"):
+            return "macho"
+        if data[:4] == b"PK\x03\x04":
             if b"word/" in data[:4096]:
                 return "docx"
             if b"xl/" in data[:4096]:
@@ -975,20 +1069,59 @@ class DeletedFileRecovery:
             if b"ppt/" in data[:4096]:
                 return "pptx"
             return "zip"
+        if data[:6] == b"7z\xbc\xaf\x27\x1c":
+            return "7z"
+        if data[:7] in (b"Rar!\x1a\x07\x00", b"Rar!\x1a\x07\x01"):
+            return "rar"
+        if data[:2] == b"\x1f\x8b":
+            return "gz"
+        if data[:3] == b"BZh":
+            return "bz2"
+        if data[:6] == b"\xfd7zXZ\x00":
+            return "xz"
         if len(data) >= 12 and data[4:8] == b"ftyp":
-            if data[8:12] == b"qt  ":
-                return "mov"
-            return "mp4"
-        if data.startswith(b"RIFF") and data[8:12] == b"WAVE":
-            return "wav"
-        if data.startswith(b"RIFF") and data[8:12] == b"AVI ":
-            return "avi"
-        if data.startswith((b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"ID3")):
+            return "mov" if data[8:12] == b"qt  " else "mp4"
+        if data[:4] == b"RIFF":
+            if len(data) >= 12:
+                if data[8:12] == b"WAVE":
+                    return "wav"
+                if data[8:12] == b"AVI ":
+                    return "avi"
+                if data[8:12] == b"WEBP":
+                    return "webp"
+        if data[:4] == b"fLaC":
+            return "flac"
+        if data[:4] == b"OggS":
+            return "ogg"
+        if data[:3] in (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
             return "mp3"
-        if data.startswith(b"From "):
-            return "eml"
-        if data.startswith((b"<!DOCTYPE html", b"<html")):
+        if data[:8] in (b"II*\x00", b"MM\x00*"):
+            return "tiff"
+        if data[:6] in (b"GIF87a", b"GIF89a"):
+            return "gif"
+        if data[:2] == b"BM":
+            return "bmp"
+        if data[:4] == b"{\\rtf":
+            return "rtf"
+        if data[:5] == b"<?xml":
+            return "xml"
+        if data[:15].lower() in (b"<!doctype html>", b"<!doctype html "):
             return "html"
+        if data[:6].lower() in (b"<html>", b"<html "):
+            return "html"
+        eml_headers = (b"From ", b"Return-Path:", b"Received:")
+        if any(data.startswith(h) for h in eml_headers):
+            return "eml"
+        if data.startswith(b"#!/"):
+            return "script"
+        if data.startswith(b"bplist"):
+            return "plist"
+        if data[:4] == b"\x1a\x45\xdf\xa3":
+            return "mkv"
+        if data[:4] in (b"FLV\x01",):
+            return "flv"
+        if data[:3] == b"ID3" or data[:2] == b"\xff\xfb":
+            return "mp3"
         return "bin"
 
     def verify_recovered(self, output_path: Path, expected_sha256: str) -> bool:

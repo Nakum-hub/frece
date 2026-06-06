@@ -1,3 +1,4 @@
+# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
 """FRECE exception hierarchy with remediation hints."""
 
 

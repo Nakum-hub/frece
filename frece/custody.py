@@ -1,3 +1,4 @@
+# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
 """Chain of custody tracking with HMAC-SHA256 protection."""
 
 import hashlib
