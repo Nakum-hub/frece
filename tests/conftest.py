@@ -1,7 +1,6 @@
 """Pytest configuration and shared fixtures."""
 
 import io
-import os
 import struct
 import tempfile
 import zipfile

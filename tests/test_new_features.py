@@ -1,26 +1,20 @@
 """Tests for FRECE v2.2.0 new features: classifier, timeline, new CLI commands."""
 
-import hashlib
 import json
 import struct
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from frece.classifier import (
     ForensicCategory,
-    ClassificationResult,
     classify_bytes,
     classify_file,
     shannon_entropy,
     entropy_label,
 )
 from frece.timeline import (
-    TimelineEvent,
     _events_from_carve_manifest,
     _events_from_recovery_manifest,
-    _events_from_custody_db,
     build_timeline,
     events_to_csv,
     events_to_json,
@@ -440,7 +434,8 @@ class TestNewCLICommands:
 class TestScanMactimeFlag:
     def test_scan_mactime_output_schema(self, tmp_path):
         """Scan --mactime output must include mode and entries with MAC fields."""
-        import subprocess, json as _json
+        import subprocess
+        import json as _json
 
         result = subprocess.run(
             ["frece", "scan", "/tmp/frece_sandbox/ntfs_test2.dd", "--mactime"],

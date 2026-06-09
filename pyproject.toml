@@ -4,48 +4,55 @@ build-backend = "hatchling.build"
 
 [project]
 name = "frece"
-version = "2.4.0"
-description = "FRECE: Forensic Recovery and Evidence Collection Engine - Production-grade digital forensics CLI"
+version = "2.5.0"
+description = "FRECE: Forensic Recovery and Evidence Carving Engine — Production-grade digital forensics CLI"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "GPL-3.0-or-later" }
+license = { text = "MIT" }
 authors = [
-    { name = "DFIR Team" }
+    { name = "FRECE Contributors" },
+]
+keywords = ["forensics", "digital-forensics", "file-recovery", "carving", "dfir", "incident-response"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: System :: Filesystems",
+    "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 
 dependencies = [
-  "yara-python>=4.5",
-  "tqdm>=4.60",
-  "cryptography>=40.0",
     "python-magic>=0.4.27",
+    "yara-python>=4.5",
+    "tqdm>=4.60",
+    "cryptography>=40.0",
 ]
 
-optional-dependencies.dev = [
+[project.optional-dependencies]
+dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
-    "black>=23.0.0",
-    "ruff>=0.0.280",
+    "ruff>=0.1.0",
     "mypy>=1.5.0",
 ]
 
 [project.scripts]
 frece = "frece.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/Nakum-hub/frece"
+Repository = "https://github.com/Nakum-hub/frece"
+Issues = "https://github.com/Nakum-hub/frece/issues"
+
 [tool.hatch.build.targets.wheel]
 packages = ["frece"]
-
-[tool.frece]
-max_ram_per_operation = 67108864
-default_hash = "sha256"
-case_root = "~/.frece/cases"
-writeblock_required = true
-chunk_size = 67108864
-max_signature_length = 2048
-max_video_size = 0
-
-[tool.black]
-line-length = 100
-target-version = ["py311"]
 
 [tool.ruff]
 line-length = 100

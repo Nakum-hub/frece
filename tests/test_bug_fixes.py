@@ -1,10 +1,7 @@
 """Regression tests for every bug fixed in the v2.0.0 → v2.1.0 patch set."""
 
 import hashlib
-import json
-import os
 import sqlite3
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -14,14 +11,11 @@ from frece.carver import StreamingCarver
 from frece.config import Config, load_config
 from frece.custody import (
     CustodyDatabase,
-    _key_store_warning_shown,
     create_case_secret_key,
-    get_case_secret_key,
     rotate_case_secret_key,
     _key_path,
 )
 from frece.errors import (
-    AcquisitionError,
     CustodyError,
     SandboxError,
     ValidationError,
@@ -55,7 +49,7 @@ def test_load_config_does_not_mkdir(tmp_path):
     cfg.case_root = non_existent
 
     # Simulate what load_config does (no TOML file → returns defaults)
-    loaded = load_config(config_path=tmp_path / "missing.toml")
+    load_config(config_path=tmp_path / "missing.toml")
 
     # The directory pointed to by a fresh default config must not yet exist
     # unless the caller explicitly calls ensure_case_root()
@@ -152,7 +146,6 @@ def test_key_path_warning_fires_at_most_once(tmp_path, monkeypatch, capsys):
     # Reset the module-level flag so the test is deterministic
     monkeypatch.setattr(custody_mod, "_key_store_warning_shown", False)
 
-    from frece.custody import _key_path
 
     _key_path(tmp_path, "case1")
     _key_path(tmp_path, "case1")

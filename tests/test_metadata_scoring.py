@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import io
-import json
 import sqlite3
 import struct
-import tempfile
 import zipfile
 from pathlib import Path
 
-import pytest
 
-from frece.metadata import extract, _jpeg, _pdf, _pe, _elf, _sqlite, _pcap, _eml, _zip
+from frece.metadata import extract
 from frece.scoring import score_artifact, score_batch, ConfidenceScore
 
 
@@ -545,14 +542,13 @@ class TestScoreArtifact:
         assert all(s.startswith("S") for s in cs.notes)
 
     def test_grade_boundaries(self, tmp_path: Path) -> None:
-        f = make_pdf(tmp_path)
+        make_pdf(tmp_path)
         for score, expected_grade in [
             (95, "CONFIRMED"), (80, "PROBABLE"), (60, "POSSIBLE"),
             (35, "SUSPECT"), (10, "REJECTED")
         ]:
             # score_artifact computes real score; just test grade logic
-            from frece.scoring import ConfidenceScore
-            cs = ConfidenceScore(
+            ConfidenceScore(
                 score=score, grade="?",
                 structural_score=0, entropy_score=0,
                 size_score=0, metadata_score=0, notes=[]
