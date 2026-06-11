@@ -224,6 +224,14 @@ def build_parser() -> argparse.ArgumentParser:
     carve_parser.add_argument("--chunk-size", type=int)
     carve_parser.add_argument("--max-signature-length", type=int)
     carve_parser.add_argument("--max-video-size", type=int)
+    carve_parser.add_argument(
+        "--yara-rules", type=Path, default=None, dest="yara_rules",
+        help="YARA rules file or directory — matches flagged inline in manifest",
+    )
+    carve_parser.add_argument(
+        "--progress", action="store_true", default=False,
+        help="Show real-time progress bar (ETA, throughput, file count)",
+    )
 
     scan_parser = subparsers.add_parser(
         "scan",
@@ -344,6 +352,30 @@ def build_parser() -> argparse.ArgumentParser:
     custody_verify.add_argument("case_dir", type=Path)
     custody_verify.add_argument("--evidence-id")
     custody_verify.add_argument("--source")
+
+    custody_encrypt_p = custody_subparsers.add_parser(
+        "encrypt",
+        help="AES-256-GCM encrypt custody.db at rest (enterprise compliance)",
+    )
+    custody_encrypt_p.add_argument("case_dir", type=Path)
+    custody_encrypt_p.add_argument(
+        "--passphrase", required=True,
+        help="Encryption passphrase",
+    )
+
+    custody_decrypt_p = custody_subparsers.add_parser(
+        "decrypt",
+        help="Decrypt an AES-256-GCM encrypted custody.db.enc file",
+    )
+    custody_decrypt_p.add_argument("enc_file", type=Path)
+    custody_decrypt_p.add_argument(
+        "--passphrase", required=True,
+        help="Decryption passphrase",
+    )
+    custody_decrypt_p.add_argument(
+        "--output", type=Path, default=None,
+        help="Output path for decrypted DB",
+    )
 
     case_parser = subparsers.add_parser(
         "case",
@@ -809,14 +841,55 @@ def handle_partitions(args: argparse.Namespace) -> int:
 
 
 def handle_custody(args: argparse.Namespace) -> int:
-    """Handle custody subcommands."""
-    if args.custody_command != "verify":
-        raise CustodyError(
-            "Missing custody subcommand",
-            remediation="Use 'frece custody verify <case_dir>'",
-        )
+    """Handle custody subcommands: verify, encrypt, decrypt."""
+    if args.custody_command == "verify":
+        return verify_custody_case(args.case_dir, args.evidence_id, args.source)
+    if args.custody_command == "encrypt":
+        return _handle_custody_encrypt(args)
+    if args.custody_command == "decrypt":
+        return _handle_custody_decrypt(args)
+    raise CustodyError(
+        "Missing custody subcommand",
+        remediation="Use 'frece custody verify|encrypt|decrypt'",
+    )
 
-    return verify_custody_case(args.case_dir, args.evidence_id, args.source)
+
+def _handle_custody_encrypt(args: argparse.Namespace) -> int:
+    """AES-256-GCM encrypt custody.db at rest."""
+    from frece.custody import encrypt_custody_db
+    db_path = Path(args.case_dir) / "custody.db"
+    if not db_path.exists():
+        print(f"custody.db not found: {db_path}", file=sys.stderr)
+        return 1
+    try:
+        enc = encrypt_custody_db(db_path, args.passphrase)
+        print(json.dumps({
+            "status": "encrypted", "plaintext": str(db_path),
+            "encrypted": str(enc), "algorithm": "AES-256-GCM",
+            "kdf": "scrypt(N=2^20,r=8,p=1)",
+        }, indent=2))
+        return 0
+    except Exception as exc:
+        print(f"Encryption failed: {exc}", file=sys.stderr)
+        return 1
+
+
+def _handle_custody_decrypt(args: argparse.Namespace) -> int:
+    """Decrypt a custody.db.enc file."""
+    from frece.custody import decrypt_custody_db
+    enc_path = Path(args.enc_file)
+    if not enc_path.exists():
+        print(f"File not found: {enc_path}", file=sys.stderr)
+        return 1
+    try:
+        out = decrypt_custody_db(enc_path, args.passphrase,
+                                 output_path=getattr(args, "output", None))
+        print(json.dumps({"status": "decrypted", "encrypted": str(enc_path),
+                          "plaintext": str(out)}, indent=2))
+        return 0
+    except Exception as exc:
+        print(f"Decryption failed: {exc}", file=sys.stderr)
+        return 1
 
 
 def handle_case(args: argparse.Namespace, extras: list[str]) -> int:
