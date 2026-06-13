@@ -116,7 +116,11 @@ def render_dfxml_report(report: dict, case_name: str) -> str:
 
     Standard: https://github.com/dfxml-working-group/dfxml_schema
     """
-    from xml.sax.saxutils import escape as _xe
+    # escape() is used here to SAFELY ENCODE our own strings for XML OUTPUT
+    # (DFXML generation) — this is the correct defensive direction. The
+    # bandit B406 rule warns about PARSING untrusted XML, which does not
+    # apply: we never parse XML with this import.
+    from xml.sax.saxutils import escape as _xe  # nosec B406
     import datetime as _dt
 
     now = _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z")

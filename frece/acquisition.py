@@ -210,7 +210,11 @@ class EvidenceAcquisition:
         try:
             with open(source, "rb") as src, open(output_path, "wb") as dst:
                 sha256_hash = hashlib.sha256()
-                md5_hash = hashlib.md5()
+                # MD5 is computed for legacy chain-of-custody compatibility
+                # (many forensic standards/tools still record MD5 alongside
+                # SHA-256). usedforsecurity=False documents that this is an
+                # evidence-integrity checksum, not a cryptographic primitive.
+                md5_hash = hashlib.md5(usedforsecurity=False)
                 bytes_written = 0
                 chunk_size = self.config.chunk_size
 
@@ -283,8 +287,18 @@ class EvidenceAcquisition:
                 remediation="Specify at least one hash algorithm",
             )
 
+        # MD5/SHA1 are supported for legacy chain-of-custody compatibility —
+        # these are evidence-integrity checksums, not cryptographic security
+        # primitives, so usedforsecurity=False is set where the constructor
+        # accepts it (Python 3.9+ on OpenSSL backends).
+        _legacy_hash_algorithms = {"md5", "sha1"}
         try:
-            hashers = {alg: hashlib.new(alg) for alg in algorithms}
+            hashers = {}
+            for alg in algorithms:
+                if alg.lower() in _legacy_hash_algorithms:
+                    hashers[alg] = hashlib.new(alg, usedforsecurity=False)
+                else:
+                    hashers[alg] = hashlib.new(alg)
         except ValueError as e:
             raise AcquisitionError(
                 f"Unsupported hash algorithm: {e}",

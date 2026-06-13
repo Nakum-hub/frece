@@ -23,7 +23,9 @@ class Partition:
 def list_partitions(image_path: Path) -> list[Partition]:
     """Run mmls and return parsed partition descriptors."""
     try:
-        result = subprocess.run(
+        # "mmls" is a standard Sleuth Kit tool expected on PATH.
+        # Partial path is intentional for operator PATH flexibility.
+        result = subprocess.run(  # nosec B603 B607
             ["mmls", str(image_path)],
             capture_output=True,
             text=True,

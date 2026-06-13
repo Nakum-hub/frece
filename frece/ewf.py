@@ -61,7 +61,10 @@ def ewfinfo(image_path: Path) -> dict:
     }
 
     try:
-        proc = subprocess.run(
+        # "ewfinfo" is a standard forensic tool expected on PATH (ewf-tools
+        # package). Partial path is intentional — operators may have it in
+        # a custom PATH location (e.g. virtualenv, /opt/forensics/bin).
+        proc = subprocess.run(  # nosec B603 B607
             ["ewfinfo", str(image_path)],
             capture_output=True, text=True, timeout=60, check=False,
         )

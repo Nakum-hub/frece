@@ -447,6 +447,22 @@ def _elf(path: Path) -> dict[str, Any]:
 # SQLite
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _quote_sql_identifier(name: str) -> str:
+    """Safely quote a SQL identifier (table/view name) for SQLite.
+
+    SQLite (and standard SQL) escapes a double-quote inside a quoted
+    identifier by doubling it: ``"`` -> ``""``. Without this, a forensic
+    evidence file containing a table literally named e.g.
+    ``evil"; DROP TABLE x; --`` could break out of the quoted identifier
+    and inject arbitrary SQL when read by ``frece metadata``.
+
+    This function eliminates that injection vector. The resulting string
+    is safe to interpolate directly into a SQL statement as an identifier
+    (identifiers cannot be supplied via parameter placeholders in SQLite).
+    """
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _sqlite(path: Path) -> dict[str, Any]:
     result: dict[str, Any] = {}
     try:
@@ -462,13 +478,21 @@ def _sqlite(path: Path) -> dict[str, Any]:
             name = row["name"]
             if name.startswith("sqlite_"):
                 continue
+
+            safe_name = _quote_sql_identifier(name)
             try:
-                count_row = conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()
+                # safe_name is a properly-escaped SQL identifier (see
+                # _quote_sql_identifier); identifiers cannot use ? placeholders.
+                count_row = conn.execute(
+                    f"SELECT COUNT(*) FROM {safe_name}"  # nosec B608
+                ).fetchone()
                 count = count_row[0] if count_row else 0
             except Exception:
                 count = -1
 
-            cols = conn.execute(f'PRAGMA table_info("{name}")').fetchall()
+            cols = conn.execute(
+                f"PRAGMA table_info({safe_name})"  # nosec B608
+            ).fetchall()
             col_names = [c["name"] for c in cols]
             table_info.append({
                 "name": name,
