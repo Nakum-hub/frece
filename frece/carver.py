@@ -494,6 +494,8 @@ class StreamingCarver:
                 return self._find_png_end(handle)
             if file_type == "gif":
                 return self._find_gif_end(handle)
+            if file_type == "bmp":
+                return self._find_bmp_end(handle)
             if file_type == "sqlite":
                 return self._get_sqlite_size(handle)
             if file_type in {"pcap"}:
@@ -504,6 +506,29 @@ class StreamingCarver:
                              "rtf", "xml", "html", "pem"}:
                 return self._find_text_end(file_type, handle)
             return self._estimate_file_size(file_type)
+
+    def _find_bmp_end(self, handle: BinaryIO) -> int:
+        """Bound a BMP carve to its declared bfSize (header offset 2, uint32 LE).
+
+        BMP records its own total file size, so the exact extent is carved
+        instead of over-running into trailing data. Previously, with no
+        dedicated end-finder, a valid BMP followed by other data over-carved to
+        the generic estimate and then failed BMP validation. Falls back to the
+        type estimate when the size field is implausible; the writer clamps to
+        EOF so an over-large field can never read past the source.
+        """
+        try:
+            head = handle.read(6)
+            if len(head) < 6 or head[:2] != b"BM":
+                return self._estimate_file_size("bmp")
+            bf_size = struct.unpack_from("<I", head, 2)[0]
+            # 54 = BITMAPFILEHEADER(14) + BITMAPINFOHEADER(40): the smallest
+            # plausible BMP. Reject smaller/larger-than-cap fields as untrusted.
+            if bf_size < 54 or bf_size > self._estimate_file_size("bmp"):
+                return self._estimate_file_size("bmp")
+            return int(bf_size)
+        except (struct.error, OSError):
+            return self._estimate_file_size("bmp")
 
     def _get_sqlite_size(self, handle: BinaryIO) -> int:
         """Compute SQLite DB size from header: page_size * page_count."""
