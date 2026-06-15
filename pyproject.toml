@@ -35,6 +35,15 @@ dependencies = [
     "cryptography>=40.0",
 ]
 
+# System-level prerequisites (installed via the OS package manager, NOT pip):
+#   - The Sleuth Kit (fls, icat, istat, mmls, fsstat) — required for filesystem
+#     metadata recovery and inode-aware operations
+#     (`frece recover`, `frece scan`, `frece fsstat`).
+#   - GNU ddrescue — recommended for error-tolerant disk imaging
+#     (`frece acquire`); FRECE falls back to a built-in copier when absent.
+# Tests marked `acceptance` (see [tool.pytest.ini_options]) require The Sleuth
+# Kit and are skipped automatically when these tools are not on PATH.
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
