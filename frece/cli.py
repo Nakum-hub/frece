@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from frece import __version__
+from frece.banner import print_banner
 from frece.acquisition import EvidenceAcquisition
 from frece.carver import StreamingCarver
 from frece.classifier import classify_file, shannon_entropy
@@ -49,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     """Main CLI entrypoint."""
     parser = build_parser()
     args, extras = parser.parse_known_args(argv)
+
+    # msfconsole-style: show a random banner first thing on an interactive
+    # launch. Suppressed on pipes/automation and via --no-banner / env vars.
+    if not getattr(args, "no_banner", False):
+        print_banner()
 
     if not args.command:
         parser.print_help()
@@ -206,6 +212,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="FRECE - Forensic Recovery and Evidence Collection Engine",
     )
     parser.add_argument("--version", action="version", version=__version__)
+    parser.add_argument(
+        "--no-banner",
+        action="store_true",
+        help="Suppress the startup banner",
+    )
 
     subparsers = parser.add_subparsers(dest="command")
 
@@ -425,7 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="report_format",
     )
 
-    # ── timeline ─────────────────────────────────────────────────────────────
+    # ── timeline ───────────────────────────────────────────────────
     timeline_parser = subparsers.add_parser(
         "timeline",
         help="Synthesise a MAC-time forensic timeline for a case",
@@ -452,7 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Supplemental fls -m body file to merge into the timeline",
     )
 
-    # ── search ────────────────────────────────────────────────────────────────
+    # ── search ──────────────────────────────────────────────────────
     search_parser = subparsers.add_parser(
         "search",
         help="Keyword / regex search across recovered or carved files",
@@ -487,7 +498,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of context lines around each hit (default: 1)",
     )
 
-    # ── entropy ───────────────────────────────────────────────────────────────
+    # ── entropy ──────────────────────────────────────────────────
     entropy_parser = subparsers.add_parser(
         "entropy",
         help="Compute Shannon entropy for a file or directory of files",
@@ -510,7 +521,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Entropy threshold above which files are flagged (default: 7.0)",
     )
 
-    # ── fsstat ────────────────────────────────────────────────────────────────
+    # ── fsstat ────────────────────────────────────────────────────
     fsstat_parser = subparsers.add_parser(
         "fsstat",
         help="Show filesystem metadata and statistics for a forensic image",
@@ -523,7 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Sector offset for the filesystem (default: 0)",
     )
 
-    # ── classify ─────────────────────────────────────────────────────────────
+    # ── classify ────────────────────────────────────────────────
     classify_parser = subparsers.add_parser(
         "classify",
         help="Classify files in a directory by forensic category and entropy",
@@ -546,7 +557,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show only files at this priority level or above",
     )
 
-    # ── metadata ─────────────────────────────────────────────────────────────
+    # ── metadata ────────────────────────────────────────────────
     metadata_parser = subparsers.add_parser(
         "metadata",
         help="Extract deep forensic metadata (EXIF GPS, PE timestamps, SQLite tables, PCAP IPs…)",
@@ -557,7 +568,7 @@ def build_parser() -> argparse.ArgumentParser:
     metadata_parser.add_argument("--output", type=Path, default=None,
         help="Write JSON results to file")
 
-    # ── score ─────────────────────────────────────────────────────────────────
+    # ── score ───────────────────────────────────────────────────────
     score_parser = subparsers.add_parser(
         "score",
         help="Compute recovery confidence scores for carved/recovered artifacts",
