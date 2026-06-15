@@ -67,8 +67,6 @@ class InputValidator:
         return path
 
     @staticmethod
-
-    @staticmethod
     def validate_case_name(name: str) -> str:
         """Validate a case name — strict whitelist, prevents path traversal.
 

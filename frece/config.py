@@ -73,6 +73,3 @@ def load_config(config_path: Path = Path.home() / ".frece" / "config.toml") -> C
 
 
 DEFAULT_CONFIG = Config()
-
-
-DEFAULT_CONFIG = Config()
