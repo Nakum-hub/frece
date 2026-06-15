@@ -583,16 +583,29 @@ class StreamingCarver:
             "script": 2*1024*1024,
         }
         max_size = limits.get(file_type, 5*1024*1024)
+        null_marker = bytes(8)  # 8 consecutive null bytes = padding
+        # Retain the last 7 bytes between reads so a padding run that straddles
+        # a chunk boundary is still detected (previously a split run was missed,
+        # causing minor over-carve of the trailing artifact).
+        overlap = len(null_marker) - 1
         total, chunk_size = 0, 4096
-        while total < max_size:
+        carry = b""
+        while total + len(carry) < max_size:
             chunk = handle.read(chunk_size)
             if not chunk:
                 break
-            null_run = chunk.find(bytes(8))  # 8 consecutive null bytes = padding
+            combined = carry + chunk
+            null_run = combined.find(null_marker)
             if null_run != -1:
-                total += null_run
-                break
-            total += len(chunk)
+                return max(total + null_run, 1)
+            # Commit everything except the trailing bytes that might be the
+            # start of a null run continuing into the next chunk.
+            if len(combined) > overlap:
+                total += len(combined) - overlap
+                carry = combined[-overlap:]
+            else:
+                carry = combined
+        total += len(carry)
         return max(total, 1)
 
     def _quick_validate_sig(self, source_path: Path, offset: int, sig_type: str) -> bool:
@@ -653,8 +666,12 @@ class StreamingCarver:
                     px_offset = int.from_bytes(head[10:14], "little")
                     if 14 <= px_offset <= 16384:
                         return True
-                    # Zero pixel offset means test/minimal BMP — still allow
-                    return px_offset == 0
+                    # A zero/implausible pixel-data offset is not a real BMP:
+                    # bfOffBits must point past the file + DIB headers. Reject it
+                    # so "BM" followed by zero padding in sparse disk regions is
+                    # not mistaken for a bitmap (consistent with full validation,
+                    # which requires pixel_offset >= 26).
+                    return False
                 return len(head) >= 2  # at minimum just BM bytes
 
             if sig_type == "pe":
