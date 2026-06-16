@@ -1,4 +1,4 @@
-# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
 """E01 / EWF (Expert Witness Format) forensic image adapter.
 
 Supports reading E01, E01x, Ex01, S01, AFF and other formats that ship
