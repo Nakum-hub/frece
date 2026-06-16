@@ -1,4 +1,4 @@
-# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
 """Acceptance tests — require a real Sleuth Kit installation and root access."""
 
 import json
@@ -15,9 +15,9 @@ import pytest
 pytestmark = pytest.mark.acceptance
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────
 
 def make_ext4_image(path: Path, size_mb: int = 20) -> Path:
     """Create a real ext4 disk image with files and then delete some."""
@@ -95,9 +95,9 @@ def make_raw_image(path: Path) -> Path:
     return img
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────
 # scan / recover / carve
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────
 
 class TestScanCommand:
     def test_scan_finds_deleted_entries(self, tmp_path):
@@ -207,9 +207,9 @@ class TestCarveCommand:
         assert len(pdf_hits) >= 1, "YARA rule should match the embedded PDF"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────
 # metadata / score / entropy / classify / search / timeline
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────
 
 class TestMetadataCommand:
     def test_metadata_sqlite(self, tmp_path):
@@ -379,9 +379,9 @@ class TestTimelineCommand:
         assert len(events) >= 2
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────
 # Case management + custody + report
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────
 
 class TestCaseWorkflow:
     def test_full_case_lifecycle(self, tmp_path, monkeypatch):
