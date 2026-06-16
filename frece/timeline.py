@@ -1,4 +1,4 @@
-# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
 """Forensic timeline synthesis from FRECE case artifacts.
 
 Aggregates MAC (Modified/Accessed/Created) times from:
@@ -62,9 +62,9 @@ def _iso_to_epoch(iso: str) -> int:
     return 0
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────────────────
 # Parsers for individual data sources
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────────────────
 
 def _events_from_mactime_line(line: str) -> list[TimelineEvent]:
     """Parse one fls -m (mactime / body file) line into TimelineEvent(s).
@@ -245,9 +245,9 @@ def _events_from_custody_db(  # noqa: E501
     return events
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────────────────
 # Public API
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────────────────
 
 def build_timeline(
     case_dir: Path,
