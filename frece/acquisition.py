@@ -1,4 +1,4 @@
-# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
 """Evidence acquisition with write-block enforcement."""
 
 import hashlib
