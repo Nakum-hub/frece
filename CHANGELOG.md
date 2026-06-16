@@ -4,6 +4,27 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ---
 
+## Unreleased — License Change (Proprietary, All Rights Reserved)
+
+### License
+- **Relicensed from MIT to a proprietary "All Rights Reserved" license.** FRECE is
+  now the proprietary and confidential property of Nakum-hub. Use, copying,
+  modification, and distribution require the prior written permission of the owner.
+  See `LICENSE` for the full terms.
+- `pyproject.toml`: license metadata changed from `MIT` to `LicenseRef-Proprietary`;
+  the OSI MIT classifier replaced with `License :: Other/Proprietary License`; author
+  field updated to `Nakum-hub`.
+- `README.md`: added a top-level proprietary-software notice and rewrote the License
+  section; the license badge now reads `Proprietary`.
+- Per-file copyright headers across the Python source files updated from
+  `Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.` to
+  `Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential.`
+
+> Note: Copies previously released under the MIT License remain licensed under MIT
+> for those specific versions. This change applies to the current and future versions.
+
+---
+
 ## v2.5.0 — Production Release (Copyright-Clean, Zero False Positives)
 
 ### Repository Cleanup

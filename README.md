@@ -5,9 +5,11 @@
 
 [![CI](https://github.com/Nakum-hub/frece/actions/workflows/ci.yml/badge.svg)](https://github.com/Nakum-hub/frece/actions)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red)](LICENSE)
 [![Version](https://img.shields.io/badge/version-2.5.0-orange)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-226%20passing-brightgreen)](tests/)
+
+> ⚠️ **Proprietary software — All Rights Reserved.** FRECE is the proprietary property of Nakum-hub. No use, copying, modification, or distribution is permitted without the prior written permission of the owner. See [LICENSE](LICENSE) for the full terms and [contact the owner](https://github.com/Nakum-hub/frece) for commercial licensing.
 
 ---
 
@@ -51,6 +53,8 @@ incident-response teams, and forensic laboratories:
 ---
 
 ## Installation
+
+> **Note:** FRECE is proprietary software. Installation and use require a license or the prior written permission of the owner (see [LICENSE](LICENSE)).
 
 ### Prerequisites
 
@@ -315,7 +319,17 @@ DFXML output embeds all custody information in a court-accepted XML format.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE)
+**Proprietary — All Rights Reserved.**
+
+Copyright (c) 2025 Nakum-hub. All rights reserved.
+
+FRECE is proprietary and confidential software. **No license is granted** to use,
+copy, modify, merge, publish, distribute, sublicense, or sell this software or its
+source code without the prior express written permission of the owner. See
+[LICENSE](LICENSE) for the complete terms.
+
+For commercial licensing or permission requests, contact the owner through the
+project repository: https://github.com/Nakum-hub/frece
 
 Third-party dependency licenses: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
