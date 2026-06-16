@@ -1,4 +1,4 @@
-# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
 """Forensic file classifier: entropy analysis, category detection, relevance scoring."""
 
 import math
@@ -235,9 +235,9 @@ def classify_bytes(
         tmp_path.unlink(missing_ok=True)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────
 # Internal helpers
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────
 
 def _compute_priority(
     category: ForensicCategory,
