@@ -8,9 +8,9 @@ version = "2.5.0"
 description = "FRECE: Forensic Recovery and Evidence Carving Engine — Production-grade digital forensics CLI"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "LicenseRef-Proprietary" }
 authors = [
-    { name = "FRECE Contributors" },
+    { name = "Nakum-hub" },
 ]
 keywords = ["forensics", "digital-forensics", "file-recovery", "carving", "dfir", "incident-response"]
 classifiers = [
@@ -18,7 +18,7 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Information Technology",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
