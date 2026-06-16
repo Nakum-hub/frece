@@ -1,4 +1,4 @@
-# Copyright (c) 2025 FRECE Contributors. Licensed under the MIT License.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
 """Unit tests for CLI entrypoint and argument parsing."""
 import pytest
 from frece.cli import build_parser
