@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential.
 """Sandboxed module execution with input validation."""
 
 import logging

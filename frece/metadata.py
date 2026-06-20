@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential.
 """Deep forensic metadata extraction.
 
 Extracts structured, court-admissible metadata from recovered and carved

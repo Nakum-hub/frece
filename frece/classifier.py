@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential.
 """Forensic file classifier: entropy analysis, category detection, relevance scoring."""
 
 import math

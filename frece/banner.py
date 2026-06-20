@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential. Unauthorized use, copying, modification, or distribution is prohibited.
+# Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential.
 """Startup banner system — msfconsole-style random ASCII banners.
 
 When FRECE is launched in an interactive terminal it prints one of 20
