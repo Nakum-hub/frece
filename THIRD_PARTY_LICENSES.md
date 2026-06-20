@@ -57,4 +57,4 @@ with commercial distribution when FRECE is distributed as a complete application
 
 All runtime Python dependencies use Apache 2.0, MIT, MPL 2.0, or BSD licenses.
 All system tools are invoked as external processes and are not bundled.
-FRECE itself is licensed under the MIT License (see LICENSE file).
+FRECE itself is proprietary software — All Rights Reserved, Copyright (c) 2025 Nakum-hub (see LICENSE file).
