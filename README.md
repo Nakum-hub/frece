@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="FRECE — Forensic Recovery and Evidence Carving Engine" width="100%">
+</p>
+
 # FRECE — Forensic Recovery and Evidence Carving Engine
 
 > Production-grade CLI forensic platform for evidence recovery, file carving,
@@ -6,8 +10,8 @@
 [![CI](https://github.com/Nakum-hub/frece/actions/workflows/ci.yml/badge.svg)](https://github.com/Nakum-hub/frece/actions)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
 [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.5.0-orange)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-226%20passing-brightgreen)](tests/)
+[![Version](https://img.shields.io/badge/version-1.0.0-orange)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](tests/)
 
 > ⚠️ **Proprietary software — All Rights Reserved.** FRECE is the proprietary property of Nakum-hub. No use, copying, modification, or distribution is permitted without the prior written permission of the owner. See [LICENSE](LICENSE) for the full terms and [contact the owner](https://github.com/Nakum-hub/frece) for commercial licensing.
 
@@ -56,41 +60,89 @@ incident-response teams, and forensic laboratories:
 
 > **Note:** FRECE is proprietary software. Installation and use require a license or the prior written permission of the owner (see [LICENSE](LICENSE)).
 
-### Prerequisites
+### One command (recommended)
+
+This is the fastest way. The installer pulls in the system forensic tools FRECE
+needs (**The Sleuth Kit, ewf-tools, libmagic, YARA**) **and** installs the `frece`
+CLI itself — in a single step:
 
 ```bash
-# The Sleuth Kit — required for filesystem-based recovery
-sudo apt-get install -y sleuthkit
-
-# EWF/E01 image format support
-sudo apt-get install -y ewf-tools
-
-# libmagic — file type detection
-sudo apt-get install -y libmagic1
-
-# YARA — optional, for threat-intelligence scanning
-sudo apt-get install -y yara
+curl -fsSL https://raw.githubusercontent.com/Nakum-hub/frece/main/install.sh | sudo bash
 ```
 
-### Install FRECE
+That's it. Open a new terminal and run `frece --version`.
 
-```bash
-pip install frece
-```
+> **Why an installer instead of plain `pip install frece`?**
+> FRECE depends on command-line forensic tools (`fls`, `icat`, `mmls`, …) that
+> live **outside** Python and can only be installed by your OS package manager —
+> `pip` can never install them. On top of that, modern systems such as **Kali**
+> and Debian 12+ block `pip install` into the system Python (the
+> `externally-managed-environment` error, [PEP 668](https://peps.python.org/pep-0668/)).
+> The installer handles both problems for you: it installs the system tools with
+> `apt`/`dnf`/`pacman`, then installs FRECE into an **isolated environment** via
+> [`pipx`](https://pipx.pypa.io/) so it never collides with system packages.
 
-### From source
+### Install from a local clone
+
+If you prefer to inspect the code first, clone the repo and run the same script:
 
 ```bash
 git clone https://github.com/Nakum-hub/frece.git
 cd frece
-pip install -e .
+sudo ./install.sh
+```
+
+### Manual install (if you'd rather do it yourself)
+
+```bash
+# 1. System prerequisites (cannot be installed by pip)
+sudo apt-get update
+sudo apt-get install -y sleuthkit ewf-tools libmagic1 yara python3 python3-venv pipx git
+
+# 2. Install FRECE in an isolated environment (PEP 668-safe)
+pipx ensurepath
+pipx install git+https://github.com/Nakum-hub/frece.git
 ```
 
 ### Verify
 
 ```bash
-frece --version        # 2.5.0
-frece tool-status      # checks all required external tools
+frece --version        # 1.0.0
+frece tool-status      # checks all required external tools are present
+```
+
+### Troubleshooting: `error: externally-managed-environment`
+
+If you ran `pip install frece` on Kali/Debian/Ubuntu and saw this:
+
+```
+error: externally-managed-environment
+× This environment is externally managed
+```
+
+…that's [PEP 668](https://peps.python.org/pep-0668/) protecting your system
+Python — it is **not** a bug in FRECE. Don't use `--break-system-packages`; it
+can corrupt OS-managed packages. Instead, use the isolated install above:
+
+```bash
+# easiest — re-run the one-command installer:
+curl -fsSL https://raw.githubusercontent.com/Nakum-hub/frece/main/install.sh | sudo bash
+
+# or install just the CLI in isolation with pipx:
+pipx install git+https://github.com/Nakum-hub/frece.git
+```
+
+If `frece` isn't found after installing, your shell hasn't picked up
+`~/.local/bin` yet — start a new terminal or run:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Uninstall
+
+```bash
+pipx uninstall frece
 ```
 
 ---
@@ -209,7 +261,7 @@ Reporting:
 
 ---
 
-## Carving — Supported File Types (v2.5.0, 88 signatures)
+## Carving — Supported File Types (88 signatures)
 
 | Category | Types |
 |---|---|

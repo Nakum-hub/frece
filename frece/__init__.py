@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential.
 """FRECE: Forensic Recovery and Evidence Collection Engine."""
 
-__version__ = "2.5.0"
+__version__ = "1.0.0"
 
 from frece.errors import (
     AcquisitionError,
