@@ -648,7 +648,10 @@ def check_tools() -> int:
         print("\nAll required tools found!")
         return 0
 
-    print("\nSome tools are missing. Install The Sleuth Kit and GNU file/coreutils.")
+    print("\nSome tools are missing. On Debian/Kali/Ubuntu, install them with:")
+    print("    sudo apt-get install -y sleuthkit ewf-tools libmagic1 yara")
+    print("Or re-run the FRECE installer, which sets everything up for you:")
+    print("    curl -fsSL https://raw.githubusercontent.com/Nakum-hub/frece/main/install.sh | sudo bash")
     return 1
 
 
