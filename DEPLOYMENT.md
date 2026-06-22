@@ -28,17 +28,31 @@ apt-get install -y yara
 
 ## Installation
 
-### From PyPI (recommended)
+### One command (recommended)
+Installs the system forensic tools **and** the FRECE CLI in one step. Works on
+externally-managed systems (Kali, Debian 12+, Ubuntu 23.04+) without the
+`externally-managed-environment` error:
 ```bash
-pip install frece
+curl -fsSL https://raw.githubusercontent.com/Nakum-hub/frece/main/install.sh | sudo bash
 ```
 
-### From source
+### From a local clone
 ```bash
 git clone https://github.com/Nakum-hub/frece.git
 cd frece
-pip install -e .
+sudo ./install.sh
 ```
+
+### Manual (isolated) install
+```bash
+sudo apt-get install -y sleuthkit ewf-tools libmagic1 yara python3 python3-venv pipx git
+pipx ensurepath
+pipx install git+https://github.com/Nakum-hub/frece.git
+```
+
+> `pip install frece` into the system Python is intentionally not used: `pip`
+> cannot install the external Sleuth Kit tools, and modern distros block it
+> (PEP 668). The installer uses `pipx` for an isolated, conflict-free install.
 
 ### Verify installation
 ```bash
@@ -89,5 +103,5 @@ frece custody encrypt /path/to/case/dir --passphrase "strong-passphrase"
 
 ## Uninstall
 ```bash
-pip uninstall frece
+pipx uninstall frece
 ```
