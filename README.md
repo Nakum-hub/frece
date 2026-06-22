@@ -58,6 +58,20 @@ incident-response teams, and forensic laboratories:
 
 ## Installation
 
+> ## ⛔ Do **not** run `pip install frece`
+> It will fail on Kali/Debian/Ubuntu with `error: externally-managed-environment`,
+> and it cannot work anyway — FRECE is **not distributed on PyPI**, and `pip` can
+> never install the system forensic tools it needs. **Use this one command instead:**
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/Nakum-hub/frece/main/install.sh | sudo bash
+> ```
+>
+> Prefer a single `pip`-style line for just the CLI? Use `pipx` (never plain `pip`):
+> ```bash
+> sudo apt install -y pipx && pipx install git+https://github.com/Nakum-hub/frece.git
+> ```
+
 > **Note:** FRECE is proprietary software. Installation and use require a license or the prior written permission of the owner (see [LICENSE](LICENSE)).
 
 ### One command (recommended)
@@ -122,13 +136,16 @@ error: externally-managed-environment
 
 …that's [PEP 668](https://peps.python.org/pep-0668/) protecting your system
 Python — it is **not** a bug in FRECE. Don't use `--break-system-packages`; it
-can corrupt OS-managed packages. Instead, use the isolated install above:
+can corrupt OS-managed packages, and it won't help anyway: FRECE is **not on
+PyPI**, so even with the override `pip` reports `No matching distribution found
+for frece`. Install from the repo in an isolated environment instead:
 
 ```bash
 # easiest — re-run the one-command installer:
 curl -fsSL https://raw.githubusercontent.com/Nakum-hub/frece/main/install.sh | sudo bash
 
-# or install just the CLI in isolation with pipx:
+# or install just the CLI in isolation with pipx (installs straight from the repo):
+sudo apt install -y pipx
 pipx install git+https://github.com/Nakum-hub/frece.git
 ```
 
