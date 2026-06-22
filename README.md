@@ -67,9 +67,10 @@ incident-response teams, and forensic laboratories:
 > curl -fsSL https://raw.githubusercontent.com/Nakum-hub/frece/main/install.sh | sudo bash
 > ```
 >
-> Prefer a single `pip`-style line for just the CLI? Use `pipx` (never plain `pip`):
+> Prefer a single `pip`-style line? Use `pipx` (never plain `pip`). This installs
+> the system forensic tools **and** the CLI, so nothing is left half-installed:
 > ```bash
-> sudo apt install -y pipx && pipx install git+https://github.com/Nakum-hub/frece.git
+> sudo apt install -y sleuthkit ewf-tools libmagic1 yara pipx && pipx install git+https://github.com/Nakum-hub/frece.git
 > ```
 
 > **Note:** FRECE is proprietary software. Installation and use require a license or the prior written permission of the owner (see [LICENSE](LICENSE)).
@@ -144,8 +145,8 @@ for frece`. Install from the repo in an isolated environment instead:
 # easiest — re-run the one-command installer:
 curl -fsSL https://raw.githubusercontent.com/Nakum-hub/frece/main/install.sh | sudo bash
 
-# or install just the CLI in isolation with pipx (installs straight from the repo):
-sudo apt install -y pipx
+# or install the system tools + CLI in isolation with pipx (installs from the repo):
+sudo apt install -y sleuthkit ewf-tools libmagic1 yara pipx
 pipx install git+https://github.com/Nakum-hub/frece.git
 ```
 
