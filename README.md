@@ -23,6 +23,7 @@ FRECE is a complete command-line digital forensics platform that helps investiga
 incident-response teams, and forensic laboratories:
 
 - **Recover** deleted files from NTFS, ext2/3/4, FAT32 disk images
+- **Rescue** files from the Linux desktop Trash/recycle bin — list them with their original path and deletion time, then restore (`frece trash`)
 - **Carve** 88 file types from raw/unallocated binary data
 - **Extract** deep forensic metadata (EXIF GPS, PE timestamps, SQLite tables, PCAP IPs)
 - **Score** every artifact with a 0–100 confidence grade (CONFIRMED / PROBABLE / POSSIBLE)

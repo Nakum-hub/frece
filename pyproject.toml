@@ -80,7 +80,7 @@ disallow_untyped_defs = false
 # mypy with --ignore-missing-imports; these overrides make a bare `mypy frece/`
 # equally clean for local development.
 [[tool.mypy.overrides]]
-module = ["yara", "tqdm", "tqdm.*", "magic"]
+module = ["yara", "tqdm", "magic"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

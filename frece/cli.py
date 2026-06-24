@@ -33,6 +33,7 @@ from frece.ewf import open_image, is_ewf_image
 from frece.metadata import extract as extract_metadata
 from frece.report import render_html_report, render_dfxml_report
 from frece.scoring import score_batch
+from frece.trash import TrashRecovery
 from frece.timeline import (
     build_timeline,
     events_to_csv,
@@ -85,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
             return handle_partitions(args)
         if args.command == "recover":
             return handle_recover(args)
+        if args.command == "trash":
+            return handle_trash(args)
         if args.command == "acquire":
             return handle_acquire(args)
         if args.command == "report":
@@ -347,6 +350,50 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="Timeout in seconds for Sleuth Kit commands (0 = unlimited)",
+    )
+
+    trash_parser = subparsers.add_parser(
+        "trash",
+        help="Scan, list and recover files from the desktop Trash (recycle bin)",
+    )
+    trash_subparsers = trash_parser.add_subparsers(dest="trash_command")
+
+    trash_list = trash_subparsers.add_parser(
+        "list",
+        help="List files sitting in the Trash with original path + deletion time",
+    )
+    trash_list.add_argument(
+        "--path",
+        type=Path,
+        default=None,
+        help="A specific Trash dir or a filesystem root to search "
+        "(default: auto-discover home + mounted-volume trashes)",
+    )
+    trash_list.add_argument("--uid", type=int, default=None, help="Owner uid for volume trashes")
+    trash_list.add_argument("--output", type=Path, default=None, help="Write JSON report to file")
+
+    trash_recover = trash_subparsers.add_parser(
+        "recover",
+        help="Recover files from the Trash (forensic copy by default)",
+    )
+    trash_recover.add_argument("--path", type=Path, default=None, help="Trash dir or search root")
+    trash_recover.add_argument("--uid", type=int, default=None, help="Owner uid for volume trashes")
+    trash_recover.add_argument(
+        "--output", type=Path, default=None, help="Directory to copy recovered files into"
+    )
+    trash_recover.add_argument(
+        "--name",
+        action="append",
+        default=None,
+        help="Restore only the entry with this trash name (repeatable)",
+    )
+    trash_recover.add_argument(
+        "--all", dest="recover_all", action="store_true", help="Recover every trashed file"
+    )
+    trash_recover.add_argument(
+        "--to-original",
+        action="store_true",
+        help="Move each file back to its original location instead of copying to --output",
     )
 
     acquire_parser = subparsers.add_parser(
@@ -747,6 +794,73 @@ def handle_recover(args: argparse.Namespace) -> int:
             indent=2,
         )
     )
+    return 0
+
+
+def handle_trash(args: argparse.Namespace) -> int:
+    """Handle the trash command - list / recover desktop Trash entries."""
+    logger = setup_logging(name="frece.trash")
+    trash = TrashRecovery(logger)
+    trash_command = getattr(args, "trash_command", None)
+
+    if trash_command is None:
+        print(
+            "Specify a subcommand: 'frece trash list' or 'frece trash recover'.\n"
+            "Tip: for files that were *emptied* from the Trash, use "
+            "'frece recover <device>' (filesystem-level recovery).",
+            file=sys.stderr,
+        )
+        return 1
+
+    trash_dirs = trash.discover_trash_dirs(explicit=args.path, uid=args.uid)
+    if not trash_dirs:
+        print(
+            json.dumps(
+                {"tool": "frece trash", "total": 0, "trash_dirs": [], "entries": []}, indent=2
+            )
+        )
+        return 0
+
+    entries = trash.list_trashed(trash_dirs)
+
+    if trash_command == "list":
+        report = trash.build_report(entries, trash_dirs, mode="list")
+        output_str = json.dumps(report, indent=2)
+        if args.output:
+            _write_text_output(args.output, output_str, RecoveryError, "trash report")
+            print(f"Trash report saved to {args.output} ({len(entries)} entries)")
+        else:
+            print(output_str)
+        return 0
+
+    # trash_command == "recover"
+    if not args.recover_all and not args.name:
+        print("Pass --all or --name <trash-name> to choose what to recover.", file=sys.stderr)
+        return 1
+    if not args.to_original and not args.output:
+        print("Pass --output <dir> for a forensic copy, or --to-original.", file=sys.stderr)
+        return 1
+
+    selected = entries
+    if args.name:
+        wanted = set(args.name)
+        selected = [entry for entry in entries if entry.trash_name in wanted]
+        if not selected:
+            print(f"No trash entries matched: {', '.join(args.name)}", file=sys.stderr)
+            return 1
+
+    recovered = trash.recover(selected, output_dir=args.output, to_original=args.to_original)
+    report = trash.build_report(recovered, trash_dirs, mode="recover")
+    report["recovered_count"] = len(recovered)
+    output_str = json.dumps(report, indent=2)
+    if args.output:
+        _write_text_output(
+            args.output / "trash_recovery_manifest.json",
+            output_str,
+            RecoveryError,
+            "trash manifest",
+        )
+    print(output_str)
     return 0
 
 
