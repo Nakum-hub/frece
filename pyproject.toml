@@ -76,5 +76,12 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 
+# Third-party C-extension libraries that ship no type stubs. CI already runs
+# mypy with --ignore-missing-imports; these overrides make a bare `mypy frece/`
+# equally clean for local development.
+[[tool.mypy.overrides]]
+module = ["yara", "tqdm", "tqdm.*", "magic"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 markers = ["acceptance: requires installed Sleuth Kit tools"]

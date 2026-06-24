@@ -48,12 +48,19 @@ def _utc_now_iso() -> str:
 
 def main(argv: list[str] | None = None) -> int:
     """Main CLI entrypoint."""
+    raw = list(sys.argv[1:] if argv is None else argv)
+    # `--no-banner` is a global flag that may appear in ANY position. Strip it
+    # before parsing so placing it after a subcommand (e.g.
+    # `frece scan img --no-banner`) does not fall through to the subparser and
+    # trigger an "Unknown arguments" error that aborts the command.
+    suppress_banner = "--no-banner" in raw
+    cleaned = [arg for arg in raw if arg != "--no-banner"]
     parser = build_parser()
-    args, extras = parser.parse_known_args(argv)
+    args, extras = parser.parse_known_args(cleaned)
 
     # msfconsole-style: show a random banner first thing on an interactive
     # launch. Suppressed on pipes/automation and via --no-banner / env vars.
-    if not getattr(args, "no_banner", False):
+    if not (suppress_banner or getattr(args, "no_banner", False)):
         print_banner()
 
     if not args.command:
