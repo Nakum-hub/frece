@@ -104,3 +104,23 @@ def test_custody_encrypt_subcommand():
     except SystemExit:
         # Parser variant that doesn't support this subcommand gracefully
         pytest.skip("custody encrypt subcommand not in this parser version")
+
+
+def test_no_banner_flag_accepted_after_subcommand(capsys):
+    """`--no-banner` after a subcommand must not abort with "Unknown arguments"."""
+    from frece.cli import main
+    rc = main(["tool-status", "--no-banner"])
+    captured = capsys.readouterr()
+    # Regression: previously this fell into argparse "extras" and returned 2,
+    # aborting the command before it ran. It must be tolerated in any position.
+    assert rc != 2
+    assert "Unknown arguments" not in captured.err
+
+
+def test_no_banner_flag_accepted_before_subcommand(capsys):
+    """`--no-banner` before the subcommand keeps working as a global flag."""
+    from frece.cli import main
+    rc = main(["--no-banner", "tool-status"])
+    captured = capsys.readouterr()
+    assert rc != 2
+    assert "Unknown arguments" not in captured.err

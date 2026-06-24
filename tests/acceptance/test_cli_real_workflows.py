@@ -19,9 +19,24 @@ pytestmark = pytest.mark.acceptance
 # Helpers
 # ──────────────────────────────────────────────────────────────────
 
+def _require_tools(*tools: str) -> None:
+    """Skip (don't fail) the test when required external tools are absent.
+
+    Honours the documented contract that acceptance tests are *skipped*
+    automatically when the underlying forensic tools are not on PATH, so the
+    full suite stays green on machines without The Sleuth Kit installed.
+    """
+    import shutil
+
+    missing = [tool for tool in tools if shutil.which(tool) is None]
+    if missing:
+        pytest.skip(f"required forensic tools not on PATH: {missing}")
+
+
 def make_ext4_image(path: Path, size_mb: int = 20) -> Path:
     """Create a real ext4 disk image with files and then delete some."""
     import subprocess
+    _require_tools("dd", "mkfs.ext4", "mount", "umount", "fls", "icat")
     img = path / "test.dd"
     subprocess.run(["dd", "if=/dev/zero", f"of={img}", "bs=1M", f"count={size_mb}"],
                    check=True, capture_output=True)
@@ -122,6 +137,7 @@ class TestScanCommand:
     def test_fsstat_returns_fs_type(self, tmp_path):
         from frece.cli import main
         import subprocess
+        _require_tools("dd", "mkfs.ext4", "fsstat")
         img = tmp_path / "fs.dd"
         subprocess.run(["dd", "if=/dev/zero", "of="+str(img), "bs=1M", "count=5"],
                        check=True, capture_output=True)
