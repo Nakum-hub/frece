@@ -269,11 +269,12 @@ Recovery & Carving:
   frece carve <image> --progress    Show real-time ETA + throughput
 
 Trash / Recycle Bin Recovery:
-  frece trash list                  List files in the desktop Trash (+ original path, deletion time)
-  frece trash list --path <dir>     Inspect a specific Trash dir, mounted image, or user home
+  frece trash list                  List Trash files (+ original path, deletion time)
+  frece trash list --image <img>    Walk a raw/NTFS/ext image with The Sleuth Kit (no mount)
+  frece trash list --format csv     CSV output (default: JSON)
   frece trash recover --all         Recover every trashed file (forensic copy to --output)
   frece trash recover --name <n>    Recover a specific trashed item
-  frece trash recover --to-original Restore items in place to their original location
+  frece trash recover --to-original Restore items in place (live, same-OS)
 
 Forensic Analysis:
   frece metadata <file|dir>         Deep metadata (EXIF GPS, PE ts, SQLite tables…)
@@ -395,25 +396,29 @@ and type** for every entry:
 # Auto-discover trashes on the local machine (home + mounted volumes)
 frece trash list
 
-# Analyse a MOUNTED EVIDENCE IMAGE — point --path at the mounted root, a user's
-# home, a Windows $Recycle.Bin\<SID>, or a macOS .Trash
+# Triage a RAW / NTFS / ext DISK IMAGE directly — no mount needed (Sleuth Kit)
+frece trash list --image disk.dd
+frece trash list --image disk.dd --offset 2048        # partition offset (sectors)
+
+# Or a MOUNTED path: a mounted root, a user home, a $Recycle.Bin\<SID>, a .Trash
 frece trash list --path /mnt/evidence
-frece trash list --path "/mnt/win/$Recycle.Bin/S-1-5-21-1234567890-1001"
-frece trash list --path /mnt/mac/Users/alice/.Trash
 
-# Save the listing as a JSON report
-frece trash list --path /mnt/evidence --output trash_report.json
+# Report as JSON (default) or CSV; optionally save to a file
+frece trash list --image disk.dd --format csv --output trash_report.csv
 
-# Recover everything to a folder — forensic copy, the trash is left intact
-frece trash recover --path /mnt/evidence --all --output ./from-trash
+# Recover from an image to a folder — forensic copy, the trash is left intact
+frece trash recover --image disk.dd --all --output ./from-trash
 
-# Recover one item, or restore items to their original location (same-OS)
+# Recover one item, or (live, same-OS) restore items to their original location
 frece trash recover --name "report.pdf" --output ./from-trash
 frece trash recover --all --to-original
 ```
 
-For files that were *emptied* from the trash, recover them at the filesystem layer
-with `frece recover` / `frece scan` (The Sleuth Kit).
+Every entry is reported with its **original path, deletion timestamp, size,
+SHA-256, and type**. Recovered files are always confined to the `--output`
+directory (recovery never follows attacker-controlled paths out of it). For files
+that were *emptied* from the trash, recover them at the filesystem layer with
+`frece recover` / `frece scan` (The Sleuth Kit).
 
 ---
 

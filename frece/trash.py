@@ -26,6 +26,7 @@ import os
 import re
 import shutil
 import struct
+import subprocess
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -49,6 +50,49 @@ def _utc_now_iso() -> str:
 def _basename(path_str: str) -> str:
     """Final component of a path that may use POSIX '/' or Windows '\\' separators."""
     return re.split(r"[\\/]", path_str)[-1] or path_str
+
+
+_UNSAFE_NAMES = {"", ".", ".."}
+
+
+def _safe_output_name(raw: str, fallback: str) -> str:
+    """Return a safe single-component filename (no separators, no traversal).
+
+    Trash records come from *untrusted evidence*; a crafted original path such as
+    ``../../etc/cron.d/x`` or an absolute path must never let a recovered file
+    escape the chosen output directory.
+    """
+    name = _basename(raw).replace("\x00", "").strip()
+    name = "".join(ch for ch in name if ch.isprintable())
+    if name in _UNSAFE_NAMES or name.startswith(".."):
+        return fallback
+    return name
+
+
+def _has_traversal(path_str: str) -> bool:
+    """True if a path contains a null byte or a ``..`` component (either separator)."""
+    if "\x00" in path_str:
+        return True
+    return ".." in re.split(r"[\\/]", path_str)
+
+
+def _trash_root_of(rel_path: str) -> Optional[str]:
+    """Given a file path inside an image, return its enclosing trash-store root."""
+    parts = rel_path.split("/")
+    low = [p.lower() for p in parts]
+    for i, part in enumerate(low):
+        if part == "$recycle.bin" and i + 1 < len(parts):
+            return "/".join(parts[: i + 2])  # $Recycle.Bin/<SID>
+    for i, part in enumerate(low):
+        if part == "trash" and i >= 1 and low[i - 1] == "share":
+            return "/".join(parts[: i + 1])  # .local/share/Trash
+        if part.startswith(".trash-"):
+            return "/".join(parts[: i + 1])  # .Trash-<uid>
+        if part == ".trashes" and i + 1 < len(parts):
+            return "/".join(parts[: i + 2])  # .Trashes/<uid>
+        if part == ".trash":
+            return "/".join(parts[: i + 1])  # macOS ~/.Trash
+    return None
 
 
 def _filetime_to_iso(filetime: int) -> Optional[str]:
@@ -417,11 +461,28 @@ class TrashRecovery:
                 continue
 
             if to_original and entry.original_path:
+                if _has_traversal(entry.original_path):
+                    self.logger.warning(
+                        "Refusing unsafe original path (traversal): %s", entry.original_path
+                    )
+                    continue
                 dest = self._unique_destination(Path(entry.original_path))
                 dest.parent.mkdir(parents=True, exist_ok=True)
             else:
-                base = _basename(entry.original_path) if entry.original_path else entry.trash_name
-                dest = self._unique_destination((output_dir or Path(".")) / base)
+                fallback = entry.trash_name or "recovered.bin"
+                base = _safe_output_name(entry.original_path or entry.trash_name, fallback)
+                target_dir = output_dir or Path(".")
+                dest = self._unique_destination(target_dir / base)
+                # defence in depth: never let a destination escape the output dir
+                try:
+                    out_real = os.path.realpath(target_dir)
+                    if os.path.commonpath([out_real, os.path.realpath(dest)]) != out_real:
+                        self.logger.warning(
+                            "Refusing out-of-bounds destination for %s", entry.trash_name
+                        )
+                        continue
+                except (OSError, ValueError):
+                    continue
 
             try:
                 if to_original:
@@ -439,6 +500,99 @@ class TrashRecovery:
             entry.recovered_to = str(dest)
             recovered.append(entry)
         return recovered
+
+    # ── image extraction (Sleuth Kit) ────────────────────────────────
+    @staticmethod
+    def _require_sleuthkit() -> None:
+        missing = [tool for tool in ("fls", "icat") if shutil.which(tool) is None]
+        if missing:
+            raise RecoveryError(
+                f"The Sleuth Kit tools not found: {missing}",
+                remediation="Install The Sleuth Kit: apt-get install sleuthkit",
+            )
+
+    def _fls_walk(self, image: Path, offset: int, timeout: int):
+        """Yield (inode_token, path) for every file in *image* via ``fls -F -r -p``."""
+        command = ["fls", "-F", "-r", "-p"]
+        if offset:
+            command += ["-o", str(offset)]
+        command += [str(image)]
+        try:
+            proc = subprocess.run(
+                command, capture_output=True, text=True, timeout=(timeout or None), check=False
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RecoveryError(
+                "fls timed out walking the image",
+                remediation="Increase --timeout or verify the image is readable",
+            ) from exc
+        for line in proc.stdout.splitlines():
+            if "\t" not in line:
+                continue
+            meta, path = line.split("\t", 1)
+            fields = meta.split()
+            if not fields:
+                continue
+            idx = 1
+            if idx < len(fields) and fields[idx] == "*":  # '*' marks a deleted entry
+                idx += 1
+            if idx >= len(fields):
+                continue
+            yield fields[idx].rstrip(":"), path
+
+    def _icat_to_file(
+        self, image: Path, offset: int, token: str, dest: Path, timeout: int
+    ) -> bool:
+        command = ["icat"]
+        if offset:
+            command += ["-o", str(offset)]
+        command += [str(image), token]
+        try:
+            with open(dest, "wb") as handle:
+                proc = subprocess.run(
+                    command, stdout=handle, stderr=subprocess.PIPE,
+                    timeout=(timeout or None), check=False,
+                )
+            return proc.returncode == 0
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            self.logger.warning("icat failed for %s: %s", token, exc)
+            return False
+
+    def extract_trash_from_image(
+        self, image: Path, staging_dir: Path, offset: int = 0, timeout: int = 0
+    ) -> list[Path]:
+        """Extract every trash store from a raw/NTFS/ext image to *staging_dir*.
+
+        Uses The Sleuth Kit (no mount) so a `.dd`/raw image of a Windows, Linux,
+        or macOS-ish volume can be triaged directly. Returns the staged trash
+        directories, ready for :meth:`list_trashed`.
+        """
+        self._require_sleuthkit()
+        image = Path(image)
+        staging_dir = Path(staging_dir)
+        staging_real = os.path.realpath(staging_dir)
+        roots: list[Path] = []
+        seen: set[str] = set()
+
+        for token, rel in self._fls_walk(image, offset, timeout):
+            root_rel = _trash_root_of(rel)
+            if root_rel is None or _has_traversal(rel):
+                continue
+            dest = staging_dir / rel
+            try:  # confine extraction strictly within the staging dir
+                if os.path.commonpath(
+                    [staging_real, os.path.realpath(dest.parent)]
+                ) != staging_real and dest.parent.exists():
+                    continue
+            except (OSError, ValueError):
+                pass
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if self._icat_to_file(image, offset, token, dest, timeout):
+                staged_root = staging_dir / root_rel
+                if str(staged_root) not in seen:
+                    seen.add(str(staged_root))
+                    roots.append(staged_root)
+        return roots
 
     # ── manifest ─────────────────────────────────────────────────────
     def build_report(

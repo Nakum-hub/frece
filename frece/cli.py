@@ -370,7 +370,18 @@ def build_parser() -> argparse.ArgumentParser:
         "(default: auto-discover home + mounted-volume trashes)",
     )
     trash_list.add_argument("--uid", type=int, default=None, help="Owner uid for volume trashes")
-    trash_list.add_argument("--output", type=Path, default=None, help="Write JSON report to file")
+    trash_list.add_argument(
+        "--image",
+        type=Path,
+        default=None,
+        help="Walk a raw/NTFS/ext disk image with The Sleuth Kit (no mount needed)",
+    )
+    trash_list.add_argument("--offset", type=int, default=0, help="Partition offset (sectors)")
+    trash_list.add_argument("--timeout", type=int, default=0, help="Sleuth Kit timeout (0=none)")
+    trash_list.add_argument(
+        "--format", choices=["json", "csv"], default="json", help="Output format"
+    )
+    trash_list.add_argument("--output", type=Path, default=None, help="Write report to file")
 
     trash_recover = trash_subparsers.add_parser(
         "recover",
@@ -378,6 +389,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     trash_recover.add_argument("--path", type=Path, default=None, help="Trash dir or search root")
     trash_recover.add_argument("--uid", type=int, default=None, help="Owner uid for volume trashes")
+    trash_recover.add_argument(
+        "--image",
+        type=Path,
+        default=None,
+        help="Walk a raw/NTFS/ext disk image with The Sleuth Kit (no mount needed)",
+    )
+    trash_recover.add_argument("--offset", type=int, default=0, help="Partition offset (sectors)")
+    trash_recover.add_argument("--timeout", type=int, default=0, help="Sleuth Kit timeout (0=none)")
     trash_recover.add_argument(
         "--output", type=Path, default=None, help="Directory to copy recovered files into"
     )
@@ -797,8 +816,30 @@ def handle_recover(args: argparse.Namespace) -> int:
     return 0
 
 
+def _trash_to_csv(entries: list) -> str:
+    """Render trash entries as CSV for spreadsheet/automation workflows."""
+    import csv
+    import io
+    from dataclasses import asdict
+
+    columns = [
+        "source_type", "original_path", "deletion_date", "size", "sha256",
+        "file_type", "is_dir", "trash_name", "trash_dir", "recovered_to",
+    ]
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for entry in entries:
+        row = asdict(entry)
+        writer.writerow({column: row.get(column, "") for column in columns})
+    return buffer.getvalue()
+
+
 def handle_trash(args: argparse.Namespace) -> int:
-    """Handle the trash command - list / recover desktop Trash entries."""
+    """Handle the trash command - list / recover Trash entries (live or from an image)."""
+    import shutil as _shutil
+    import tempfile
+
     logger = setup_logging(name="frece.trash")
     trash = TrashRecovery(logger)
     trash_command = getattr(args, "trash_command", None)
@@ -812,56 +853,87 @@ def handle_trash(args: argparse.Namespace) -> int:
         )
         return 1
 
-    trash_dirs = trash.discover_trash_dirs(explicit=args.path, uid=args.uid)
-    if not trash_dirs:
+    use_image = getattr(args, "image", None)
+    if trash_command == "recover" and use_image and args.to_original:
         print(
-            json.dumps(
-                {"tool": "frece trash", "total": 0, "trash_dirs": [], "entries": []}, indent=2
-            )
+            "--to-original is not allowed with --image (the original host is not here); "
+            "use --output for a forensic copy.",
+            file=sys.stderr,
         )
-        return 0
+        return 1
 
-    entries = trash.list_trashed(trash_dirs)
-
-    if trash_command == "list":
-        report = trash.build_report(entries, trash_dirs, mode="list")
-        output_str = json.dumps(report, indent=2)
-        if args.output:
-            _write_text_output(args.output, output_str, RecoveryError, "trash report")
-            print(f"Trash report saved to {args.output} ({len(entries)} entries)")
+    staging = None
+    try:
+        if use_image:
+            staging = tempfile.mkdtemp(prefix="frece-trash-")
+            trash_dirs = trash.extract_trash_from_image(
+                args.image, Path(staging), offset=args.offset, timeout=args.timeout
+            )
         else:
-            print(output_str)
-        return 0
+            trash_dirs = trash.discover_trash_dirs(explicit=args.path, uid=args.uid)
 
-    # trash_command == "recover"
-    if not args.recover_all and not args.name:
-        print("Pass --all or --name <trash-name> to choose what to recover.", file=sys.stderr)
-        return 1
-    if not args.to_original and not args.output:
-        print("Pass --output <dir> for a forensic copy, or --to-original.", file=sys.stderr)
-        return 1
+        is_csv = trash_command == "list" and getattr(args, "format", "json") == "csv"
 
-    selected = entries
-    if args.name:
-        wanted = set(args.name)
-        selected = [entry for entry in entries if entry.trash_name in wanted]
-        if not selected:
-            print(f"No trash entries matched: {', '.join(args.name)}", file=sys.stderr)
+        if not trash_dirs:
+            if is_csv:
+                print(_trash_to_csv([]))
+            else:
+                print(
+                    json.dumps(
+                        {"tool": "frece trash", "total": 0, "trash_dirs": [], "entries": []},
+                        indent=2,
+                    )
+                )
+            return 0
+
+        entries = trash.list_trashed(trash_dirs)
+
+        if trash_command == "list":
+            if is_csv:
+                output_str = _trash_to_csv(entries)
+            else:
+                output_str = json.dumps(
+                    trash.build_report(entries, trash_dirs, mode="list"), indent=2
+                )
+            if args.output:
+                _write_text_output(args.output, output_str, RecoveryError, "trash report")
+                print(f"Trash report saved to {args.output} ({len(entries)} entries)")
+            else:
+                print(output_str)
+            return 0
+
+        # trash_command == "recover"
+        if not args.recover_all and not args.name:
+            print("Pass --all or --name <trash-name> to choose what to recover.", file=sys.stderr)
+            return 1
+        if not args.to_original and not args.output:
+            print("Pass --output <dir> for a forensic copy, or --to-original.", file=sys.stderr)
             return 1
 
-    recovered = trash.recover(selected, output_dir=args.output, to_original=args.to_original)
-    report = trash.build_report(recovered, trash_dirs, mode="recover")
-    report["recovered_count"] = len(recovered)
-    output_str = json.dumps(report, indent=2)
-    if args.output:
-        _write_text_output(
-            args.output / "trash_recovery_manifest.json",
-            output_str,
-            RecoveryError,
-            "trash manifest",
-        )
-    print(output_str)
-    return 0
+        selected = entries
+        if args.name:
+            wanted = set(args.name)
+            selected = [entry for entry in entries if entry.trash_name in wanted]
+            if not selected:
+                print(f"No trash entries matched: {', '.join(args.name)}", file=sys.stderr)
+                return 1
+
+        recovered = trash.recover(selected, output_dir=args.output, to_original=args.to_original)
+        report = trash.build_report(recovered, trash_dirs, mode="recover")
+        report["recovered_count"] = len(recovered)
+        output_str = json.dumps(report, indent=2)
+        if args.output:
+            _write_text_output(
+                args.output / "trash_recovery_manifest.json",
+                output_str,
+                RecoveryError,
+                "trash manifest",
+            )
+        print(output_str)
+        return 0
+    finally:
+        if staging:
+            _shutil.rmtree(staging, ignore_errors=True)
 
 
 def handle_acquire(args: argparse.Namespace) -> int:

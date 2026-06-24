@@ -268,3 +268,74 @@ def test_cli_trash_list_windows(tmp_path):
     report = json.loads(report_path.read_text())
     assert report["total"] == 1
     assert report["entries"][0]["source_type"] == "windows"
+
+
+# ──────────────────────────────────────────────────────────────────
+# Security: path-traversal / confinement
+# ──────────────────────────────────────────────────────────────────
+
+def test_safe_output_name_blocks_traversal():
+    from frece.trash import _has_traversal, _safe_output_name
+
+    assert _safe_output_name("../../etc/passwd", "fb") == "passwd"
+    assert _safe_output_name("/abs/path/..", "fb") == "fb"      # ".." -> fallback
+    assert _safe_output_name("", "fb") == "fb"
+    assert _safe_output_name("C:\\Windows\\System32\\evil.dll", "fb") == "evil.dll"
+    assert _has_traversal("a/../b") is True
+    assert _has_traversal("C:\\x\\..\\y") is True
+    assert _has_traversal("notes\x00.txt") is True
+    assert _has_traversal("/home/u/file.txt") is False
+
+
+def test_trash_root_detection():
+    from frece.trash import _trash_root_of
+
+    assert _trash_root_of("Users/Bob/$Recycle.Bin/S-1-5/$IX.txt") == "Users/Bob/$Recycle.Bin/S-1-5"
+    assert _trash_root_of("home/u/.local/share/Trash/files/x") == "home/u/.local/share/Trash"
+    assert _trash_root_of(".Trash-1000/files/x") == ".Trash-1000"
+    assert _trash_root_of("Users/a/.Trash/x.jpg") == "Users/a/.Trash"
+    assert _trash_root_of("random/path/file.txt") is None
+
+
+def test_recover_refuses_traversal_to_original(tmp_path):
+    from frece.trash import TrashedFile, TrashRecovery
+
+    (tmp_path / "x").write_text("payload")
+    evil = TrashedFile(
+        trash_name="x", original_path="/tmp/../etc/evil_frece_test", deletion_date=None,
+        size=1, sha256="", file_type="t", is_dir=False, trash_dir=str(tmp_path),
+        files_path=str(tmp_path / "x"), info_path=None, has_info=False,
+    )
+    recovered = TrashRecovery().recover([evil], to_original=True)
+    assert recovered == []  # traversal refused
+    assert not Path("/etc/evil_frece_test").exists()
+
+
+def test_recover_forensic_copy_is_confined(tmp_path):
+    from frece.trash import TrashRecovery
+
+    trash = tmp_path / "Trash"
+    (trash / "files").mkdir(parents=True)
+    (trash / "info").mkdir()
+    (trash / "files" / "evil").write_text("x")
+    (trash / "info" / "evil.trashinfo").write_text(
+        "[Trash Info]\nPath=/../../etc/cron.d/evil\nDeletionDate=2026-01-01T00:00:00\n"
+    )
+    tr = TrashRecovery()
+    out = tmp_path / "out"
+    recovered = tr.recover(tr.list_trashed([trash]), output_dir=out)
+    assert len(recovered) == 1
+    assert str(out) in recovered[0].recovered_to
+    assert ".." not in recovered[0].recovered_to
+
+
+def test_cli_trash_csv(tmp_path, capsys):
+    from frece.cli import main
+
+    trash = _make_trash(tmp_path)
+    rc = main(["trash", "list", "--path", str(trash), "--format", "csv"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    lines = captured.out.strip().splitlines()
+    assert lines[0].startswith("source_type,original_path,deletion_date")
+    assert any("secret.txt" in line for line in lines)

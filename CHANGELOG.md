@@ -13,9 +13,22 @@ All notable changes are documented here. Versions follow [semantic versioning](h
   paired `$I`/`$R` records), and **macOS** (`~/.Trash`, `.Trashes/<uid>`),
   decoding each item's original path and deletion time (FILETIME on Windows);
   `frece trash recover` restores them (a forensic copy that preserves the trash
-  by default, or `--to-original` for a true in-place restore). Point `--path` at
-  a mounted evidence image to triage another machine's trash. For files *emptied*
+  by default, or `--to-original` for a true in-place restore). For files *emptied*
   from the trash, use `frece recover` for filesystem-level recovery.
+- **`frece trash --image`** — walk a raw/NTFS/ext **disk image directly with The
+  Sleuth Kit (no mount)** to extract its trash stores, so a `.dd`/raw image of a
+  Windows, Linux, or macOS-style volume can be triaged offline. `--offset`
+  selects a partition; `frece trash list --format csv` emits CSV.
+
+### Security
+- Trash recovery now treats trash records as **untrusted evidence**: recovered
+  files are strictly confined to the `--output` directory (a crafted original
+  path can never escape it), `--to-original` refuses paths containing `..`/null
+  bytes, and image extraction is confined to its staging directory.
+- The HTML case report (`frece report --format html`) now **HTML-escapes** all
+  evidence-derived values (artifact types, categories, case name), closing a
+  stored-XSS vector when an investigator opens a report built from crafted
+  evidence.
 
 ### Fixed
 - Acceptance tests now **skip** (instead of failing) when the underlying Sleuth
