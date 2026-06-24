@@ -40,6 +40,7 @@ incident-response teams, and forensic laboratories:
 | Capability | PhotoRec | Foremost | Scalpel | **FRECE** |
 |---|:---:|:---:|:---:|:---:|
 | File carving (88 types) | ✅ | ✅ | ✅ | ✅ |
+| Trash recovery (Linux/Windows/macOS) | ❌ | ❌ | ❌ | ✅ |
 | Exact carved-file size | ⚠️ | ❌ | ❌ | ✅ |
 | Structural validation per type | ❌ | ❌ | ❌ | ✅ 46 types |
 | Confidence scoring (0–100) | ❌ | ❌ | ❌ | ✅ |
