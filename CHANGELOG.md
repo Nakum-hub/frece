@@ -7,13 +7,15 @@ All notable changes are documented here. Versions follow [semantic versioning](h
 ## Unreleased
 
 ### Added
-- **`frece trash`** — recover files from the freedesktop.org Trash (recycle
-  bin). `frece trash list` enumerates every trash location (home directory +
-  mounted volumes), decoding each item's original path and deletion timestamp
-  from its `.trashinfo` record; `frece trash recover` restores them (a forensic
-  copy that preserves the trash by default, or `--to-original` for a true
-  in-place restore). For files *emptied* from the trash, use `frece recover`
-  for filesystem-level recovery.
+- **`frece trash`** — cross-platform Trash / recycle-bin recovery. `frece trash
+  list` discovers and lists trashed files across **Linux** (freedesktop
+  `~/.local/share/Trash`, `.Trash-<uid>`), **Windows** (`$Recycle.Bin\<SID>` with
+  paired `$I`/`$R` records), and **macOS** (`~/.Trash`, `.Trashes/<uid>`),
+  decoding each item's original path and deletion time (FILETIME on Windows);
+  `frece trash recover` restores them (a forensic copy that preserves the trash
+  by default, or `--to-original` for a true in-place restore). Point `--path` at
+  a mounted evidence image to triage another machine's trash. For files *emptied*
+  from the trash, use `frece recover` for filesystem-level recovery.
 
 ### Fixed
 - Acceptance tests now **skip** (instead of failing) when the underlying Sleuth
