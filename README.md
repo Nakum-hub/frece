@@ -174,6 +174,10 @@ frece scan evidence.dd
 # Recover deleted files
 frece recover evidence.dd --output ./recovered
 
+# Recover files sitting in the desktop Trash / recycle bin
+frece trash list                                  # list trashed files + original paths
+frece trash recover --all --output ./from-trash   # forensic copy out of the Trash
+
 # Carve from raw/unallocated space
 frece carve evidence.dd --output ./carved
 
@@ -244,6 +248,13 @@ Recovery & Carving:
   frece carve <image>               Carve 88 file types from raw/unallocated
   frece carve <image> --yara-rules  Carve with inline YARA threat scanning
   frece carve <image> --progress    Show real-time ETA + throughput
+
+Trash / Recycle Bin Recovery:
+  frece trash list                  List files in the desktop Trash (+ original path, deletion time)
+  frece trash list --path <dir>     Inspect a specific Trash dir, mounted image, or user home
+  frece trash recover --all         Recover every trashed file (forensic copy to --output)
+  frece trash recover --name <n>    Recover a specific trashed item
+  frece trash recover --to-original Restore items in place to their original location
 
 Forensic Analysis:
   frece metadata <file|dir>         Deep metadata (EXIF GPS, PE ts, SQLite tables…)
@@ -345,6 +356,37 @@ frece custody encrypt /path/to/case --passphrase "strong-passphrase"
 ```
 
 DFXML output embeds all custody information in a court-accepted XML format.
+
+---
+
+## Trash / Recycle-Bin Recovery (`frece trash`)
+
+Deleting a file in a Linux file manager does **not** erase it — it is moved into a
+[freedesktop.org Trash](https://specifications.freedesktop.org/trash-spec/latest/)
+directory together with a `.trashinfo` record of its **original path** and
+**deletion time**. FRECE finds, lists, and recovers these:
+
+```bash
+# Scan + list every trashed file (home trash + mounted-volume trashes)
+frece trash list
+
+# Point at a specific Trash dir, a mounted evidence image, or a user's home
+frece trash list --path /mnt/evidence/home/alice
+
+# Save the listing as a JSON report
+frece trash list --output trash_report.json
+
+# Recover everything to a folder — forensic copy, the Trash is left intact
+frece trash recover --all --output ./from-trash
+
+# Recover one item, or restore items to their original location
+frece trash recover --name "report.pdf" --output ./from-trash
+frece trash recover --all --to-original
+```
+
+Every entry is reported with its **original path, deletion timestamp, size,
+SHA-256, and type**. For files that were *emptied* from the Trash, recover them
+at the filesystem layer with `frece recover` / `frece scan` (The Sleuth Kit).
 
 ---
 
