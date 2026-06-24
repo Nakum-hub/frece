@@ -1,9 +1,11 @@
 # Copyright (c) 2025 Nakum-hub. All rights reserved. Proprietary and confidential.
-"""Unit tests for freedesktop Trash recovery (frece.trash)."""
+"""Unit tests for cross-platform Trash recovery (frece.trash)."""
 import json
+import struct
+from datetime import datetime, timezone
 from pathlib import Path
 
-from frece.trash import TrashRecovery, parse_trashinfo
+from frece.trash import TrashRecovery, parse_trashinfo, parse_windows_index
 
 
 def _make_trash(root: Path) -> Path:
@@ -151,3 +153,118 @@ def test_cli_trash_requires_selection(tmp_path):
     # recover without --all/--name must error cleanly, not crash
     rc = main(["trash", "recover", "--path", str(trash), "--output", str(tmp_path / "o")])
     assert rc == 1
+
+
+# ──────────────────────────────────────────────────────────────────
+# Windows $Recycle.Bin
+# ──────────────────────────────────────────────────────────────────
+
+def _filetime(dt: datetime) -> int:
+    epoch = datetime(1601, 1, 1, tzinfo=timezone.utc)
+    return int((dt - epoch).total_seconds() * 10_000_000)
+
+
+def _make_windows_recycle(root: Path):
+    sid = root / "$Recycle.Bin" / "S-1-5-21-1234567890-1-1-1001"
+    sid.mkdir(parents=True)
+    content = b"WINDOWS SECRET DOC CONTENT\n"
+    (sid / "$RABCDEF.docx").write_bytes(content)
+    original = "C:\\Users\\Bob\\Documents\\secret.docx"
+    ft = _filetime(datetime(2026, 6, 23, 22, 14, 5, tzinfo=timezone.utc))
+    path_bytes = original.encode("utf-16-le") + b"\x00\x00"
+    index = (
+        struct.pack("<QQQ", 2, len(content), ft)
+        + struct.pack("<I", len(original) + 1)
+        + path_bytes
+    )
+    (sid / "$IABCDEF.docx").write_bytes(index)
+    return sid, original, content
+
+
+def test_parse_windows_index_v2():
+    original = "C:\\Users\\Bob\\file.txt"
+    ft = _filetime(datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc))
+    data = struct.pack("<QQQ", 2, 123, ft) + struct.pack("<I", len(original) + 1) + \
+        original.encode("utf-16-le") + b"\x00\x00"
+    meta = parse_windows_index(data)
+    assert meta["original_path"] == original
+    assert meta["size"] == 123
+    assert meta["deletion_date"].startswith("2026-01-02T03:04:05")
+
+
+def test_parse_windows_index_v1():
+    original = "C:\\X\\y.txt"
+    ft = _filetime(datetime(2025, 12, 31, 0, 0, 0, tzinfo=timezone.utc))
+    raw = original.encode("utf-16-le")
+    raw += b"\x00" * (520 - len(raw))  # fixed 260-wchar field
+    data = struct.pack("<QQQ", 1, 10, ft) + raw
+    meta = parse_windows_index(data)
+    assert meta["original_path"] == original
+    assert meta["size"] == 10
+
+
+def test_list_windows_recycle_bin(tmp_path):
+    sid, original, content = _make_windows_recycle(tmp_path)
+    entries = TrashRecovery().list_trashed([sid])
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.source_type == "windows"
+    assert entry.original_path == original
+    assert entry.deletion_date.startswith("2026-06-23T22:14:05")
+    assert entry.size == len(content)
+    assert entry.has_info is True
+
+
+def test_recover_windows_uses_original_name(tmp_path):
+    sid, _original, content = _make_windows_recycle(tmp_path)
+    tr = TrashRecovery()
+    entries = tr.list_trashed([sid])
+    out = tmp_path / "out"
+    recovered = tr.recover(entries, output_dir=out)
+    assert len(recovered) == 1
+    assert (out / "secret.docx").read_bytes() == content  # $R content, original basename
+
+
+# ──────────────────────────────────────────────────────────────────
+# macOS Trash
+# ──────────────────────────────────────────────────────────────────
+
+def _make_macos_trash(root: Path) -> Path:
+    trash = root / ".Trash"
+    trash.mkdir()
+    (trash / "vacation.jpg").write_bytes(b"macos-photo-bytes")
+    (trash / ".DS_Store").write_bytes(b"\x00\x00")  # metadata, must be skipped
+    return trash
+
+
+def test_list_macos_trash(tmp_path):
+    trash = _make_macos_trash(tmp_path)
+    entries = TrashRecovery().list_trashed([trash])
+    names = {e.trash_name for e in entries}
+    assert "vacation.jpg" in names
+    assert ".DS_Store" not in names
+    photo = next(e for e in entries if e.trash_name == "vacation.jpg")
+    assert photo.source_type == "macos"
+    assert photo.deletion_date is not None
+    assert len(photo.sha256) == 64
+
+
+def test_discover_finds_windows_and_macos_under_root(tmp_path):
+    _make_windows_recycle(tmp_path)
+    _make_macos_trash(tmp_path)
+    dirs = TrashRecovery().discover_trash_dirs(explicit=tmp_path)
+    kinds = {TrashRecovery._trash_kind(d) for d in dirs}
+    assert "windows" in kinds
+    assert "macos" in kinds
+
+
+def test_cli_trash_list_windows(tmp_path):
+    from frece.cli import main
+
+    sid, _original, _content = _make_windows_recycle(tmp_path)
+    report_path = tmp_path / "win.json"
+    rc = main(["trash", "list", "--path", str(sid), "--output", str(report_path)])
+    assert rc == 0
+    report = json.loads(report_path.read_text())
+    assert report["total"] == 1
+    assert report["entries"][0]["source_type"] == "windows"

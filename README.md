@@ -23,7 +23,7 @@ FRECE is a complete command-line digital forensics platform that helps investiga
 incident-response teams, and forensic laboratories:
 
 - **Recover** deleted files from NTFS, ext2/3/4, FAT32 disk images
-- **Rescue** files from the Linux desktop Trash/recycle bin — list them with their original path and deletion time, then restore (`frece trash`)
+- **Rescue** files from the desktop Trash/recycle bin on **Linux, Windows (`$Recycle.Bin`) and macOS** — list them with their original path and deletion time, then restore (`frece trash`)
 - **Carve** 88 file types from raw/unallocated binary data
 - **Extract** deep forensic metadata (EXIF GPS, PE timestamps, SQLite tables, PCAP IPs)
 - **Score** every artifact with a 0–100 confidence grade (CONFIRMED / PROBABLE / POSSIBLE)
@@ -361,32 +361,40 @@ DFXML output embeds all custody information in a court-accepted XML format.
 
 ## Trash / Recycle-Bin Recovery (`frece trash`)
 
-Deleting a file in a Linux file manager does **not** erase it — it is moved into a
-[freedesktop.org Trash](https://specifications.freedesktop.org/trash-spec/latest/)
-directory together with a `.trashinfo` record of its **original path** and
-**deletion time**. FRECE finds, lists, and recovers these:
+Deleting a file in a desktop file manager does **not** erase it — it is moved into
+a per-platform trash store. `frece trash` understands all three common layouts and
+recovers from each, reporting the **original path, deletion time, size, SHA-256,
+and type** for every entry:
+
+| Platform | Location | Original path & deletion time |
+|---|---|---|
+| **Linux** (freedesktop) | `~/.local/share/Trash`, `.Trash-<uid>` | ✅ from `*.trashinfo` |
+| **Windows** | `$Recycle.Bin\<SID>\` (`$I`/`$R` pairs) | ✅ from the `$I` record (FILETIME) |
+| **macOS** | `~/.Trash`, `.Trashes/<uid>` | deletion time from file mtime |
 
 ```bash
-# Scan + list every trashed file (home trash + mounted-volume trashes)
+# Auto-discover trashes on the local machine (home + mounted volumes)
 frece trash list
 
-# Point at a specific Trash dir, a mounted evidence image, or a user's home
-frece trash list --path /mnt/evidence/home/alice
+# Analyse a MOUNTED EVIDENCE IMAGE — point --path at the mounted root, a user's
+# home, a Windows $Recycle.Bin\<SID>, or a macOS .Trash
+frece trash list --path /mnt/evidence
+frece trash list --path "/mnt/win/$Recycle.Bin/S-1-5-21-1234567890-1001"
+frece trash list --path /mnt/mac/Users/alice/.Trash
 
 # Save the listing as a JSON report
-frece trash list --output trash_report.json
+frece trash list --path /mnt/evidence --output trash_report.json
 
-# Recover everything to a folder — forensic copy, the Trash is left intact
-frece trash recover --all --output ./from-trash
+# Recover everything to a folder — forensic copy, the trash is left intact
+frece trash recover --path /mnt/evidence --all --output ./from-trash
 
-# Recover one item, or restore items to their original location
+# Recover one item, or restore items to their original location (same-OS)
 frece trash recover --name "report.pdf" --output ./from-trash
 frece trash recover --all --to-original
 ```
 
-Every entry is reported with its **original path, deletion timestamp, size,
-SHA-256, and type**. For files that were *emptied* from the Trash, recover them
-at the filesystem layer with `frece recover` / `frece scan` (The Sleuth Kit).
+For files that were *emptied* from the trash, recover them at the filesystem layer
+with `frece recover` / `frece scan` (The Sleuth Kit).
 
 ---
 
