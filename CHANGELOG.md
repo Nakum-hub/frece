@@ -4,6 +4,31 @@ All notable changes are documented here. Versions follow [semantic versioning](h
 
 ---
 
+## Unreleased
+
+### Added
+- **`frece trash`** — recover files from the freedesktop.org Trash (recycle
+  bin). `frece trash list` enumerates every trash location (home directory +
+  mounted volumes), decoding each item's original path and deletion timestamp
+  from its `.trashinfo` record; `frece trash recover` restores them (a forensic
+  copy that preserves the trash by default, or `--to-original` for a true
+  in-place restore). For files *emptied* from the trash, use `frece recover`
+  for filesystem-level recovery.
+
+### Fixed
+- Acceptance tests now **skip** (instead of failing) when the underlying Sleuth
+  Kit / image tools are absent, honouring the documented "skipped automatically
+  when these tools are not on PATH" contract.
+- The global `--no-banner` flag is now accepted in **any** position — e.g.
+  `frece scan img --no-banner` no longer aborts with "Unknown arguments".
+
+### Developer experience
+- A bare `mypy frece/` is now clean: added overrides for the stub-less
+  C-extension dependencies (`yara`, `tqdm`, `magic`); CI already passed via
+  `--ignore-missing-imports`.
+
+---
+
 ## v1.0.0 — Initial Release
 
 The first public release of **FRECE — Forensic Recovery and Evidence Carving
